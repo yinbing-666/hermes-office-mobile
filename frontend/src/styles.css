@@ -46,7 +46,7 @@ button { border: 0; cursor: pointer; }
 .page-section { display: grid; gap: 14px; animation: rise 180ms ease; }
 @keyframes rise { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: translateY(0); } }
 
-.office-overview, .detail-card, .timeline-card, .compose-card, .empty-card, .info-card, .employee-section-card {
+.office-overview, .virtual-office-card, .resource-task-card, .detail-card, .timeline-card, .compose-card, .empty-card, .info-card, .employee-section-card {
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: 11px;
@@ -71,6 +71,80 @@ p { color: var(--muted); line-height: 1.6; }
 .metric-dot.online { background: var(--green); }
 .metric-dot.offline { background: var(--red); }
 .metric-dot.pending { background: var(--amber); }
+
+.virtual-office-card { padding: 15px; overflow: hidden; background: linear-gradient(145deg, #fff 0%, #faf9f5 100%); }
+.virtual-office-heading, .resource-task-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.virtual-office-heading > span { display: inline-flex; align-items: center; gap: 6px; color: #75808a; font-size: 10px; }
+.virtual-office-heading > span i { width: 6px; height: 6px; background: var(--green); border-radius: 50%; box-shadow: 0 0 0 3px #e9f5ee; }
+.office-room { position: relative; height: 218px; margin: 10px -2px -2px; overflow: hidden; border: 1px solid #e4e1da; border-radius: 11px; background: linear-gradient(155deg, #f8f7f3 0%, #efede6 100%); }
+.office-floor-grid { position: absolute; inset: 16px -24px -45px; transform: rotateX(55deg) rotateZ(-28deg) scale(1.12); background-color: #f4f1e9; background-image: linear-gradient(#dedbd2 1px, transparent 1px), linear-gradient(90deg, #dedbd2 1px, transparent 1px); background-size: 29px 29px; border: 1px solid #d8d4ca; box-shadow: inset 0 0 45px rgba(255, 255, 255, .72); }
+.office-kitchenette { position: absolute; top: 16px; left: 18px; width: 104px; height: 70px; }
+.kitchen-cabinet { position: absolute; top: 0; left: 0; width: 84px; height: 27px; display: grid; grid-template-columns: repeat(3, 1fr); padding: 3px; background: #e8e5dc; border: 1px solid #cbc8bf; border-radius: 4px; box-shadow: 0 4px 0 #d3d0c7; }
+.kitchen-cabinet span { border-right: 1px solid #cbc8bf; }
+.kitchen-cabinet span:last-child { border-right: 0; }
+.kitchen-counter { position: absolute; top: 38px; left: 2px; width: 91px; height: 22px; background: #d9d5ca; border: 1px solid #c2beb4; border-radius: 3px; box-shadow: 0 7px 0 #c9c5bb; }
+.kitchen-counter i { position: absolute; top: 5px; left: 12px; width: 20px; height: 9px; border: 2px solid #aeb4b5; border-radius: 50%; }
+.kitchen-counter b { position: absolute; top: -12px; right: 12px; width: 15px; height: 17px; background: #f5f4f0; border: 1px solid #b9b7b0; border-radius: 3px 3px 5px 5px; box-shadow: inset 0 -5px #c9d7d6; }
+.kitchen-stool { position: absolute; top: 50px; width: 17px; height: 9px; background: #c9b89e; border: 1px solid #aa9a84; border-radius: 50%; box-shadow: 0 8px 0 -5px #9d9487; }
+.stool-one { left: 66px; }
+.stool-two { left: 91px; }
+.office-treadmill { position: absolute; top: 27px; right: 20px; width: 72px; height: 38px; transform: skewY(-8deg); }
+.office-treadmill span { position: absolute; left: 3px; right: 2px; bottom: 0; height: 18px; background: #cfd3d3; border: 1px solid #adb3b4; border-radius: 11px 4px 5px 11px; box-shadow: inset 0 0 0 5px #e7e8e5, 0 4px 0 #b9bdbd; }
+.office-treadmill i { position: absolute; right: 8px; top: 0; width: 4px; height: 24px; background: #969fa2; border-radius: 3px; }
+.office-treadmill b { position: absolute; right: 2px; top: 0; width: 19px; height: 11px; background: #76858a; border: 2px solid #b9c1c2; border-radius: 3px; }
+.office-desk { position: absolute; width: 78px; height: 34px; background: #e5ded2; border: 1px solid #c7bfb2; border-radius: 4px; box-shadow: 0 8px 0 #cfc6b9, 0 12px 12px rgba(87, 78, 66, .12); transform: skewY(-5deg); }
+.office-desk::before, .office-desk::after { content: ""; position: absolute; bottom: -12px; width: 4px; height: 12px; background: #a8a39b; border-radius: 0 0 2px 2px; }
+.office-desk::before { left: 9px; }
+.office-desk::after { right: 9px; }
+.office-desk i { position: absolute; top: -17px; left: 25px; width: 30px; height: 20px; background: #707a7d; border: 3px solid #aeb6b6; border-radius: 3px; box-shadow: inset 0 0 0 2px #dce3e1; }
+.office-desk i::after { content: ""; position: absolute; left: 10px; bottom: -8px; width: 4px; height: 7px; background: #8e9696; }
+.office-desk span { position: absolute; top: 8px; left: 7px; width: 14px; height: 9px; background: #f4f0e8; border: 1px solid #bdb7ad; border-radius: 2px; }
+.office-desk b { position: absolute; top: 7px; right: 7px; width: 7px; height: 10px; background: #a9b9b4; border-radius: 2px 2px 4px 4px; }
+.desk-one { left: 22%; top: 50%; }
+.desk-two { left: 51%; top: 42%; }
+.desk-three { left: 34%; top: 75%; }
+.desk-four { right: 7%; top: 70%; }
+.office-person { position: absolute; z-index: 3; width: 25px; height: 38px; }
+.office-person i { position: absolute; top: 0; left: 5px; width: 15px; height: 15px; background: #d7b9a1; border: 3px solid #626a70; border-radius: 50%; box-shadow: 0 2px 4px rgba(52, 55, 57, .16); }
+.office-person span { position: absolute; top: 14px; left: 2px; width: 21px; height: 22px; background: #8297a8; border: 1px solid #697e8e; border-radius: 8px 8px 5px 5px; box-shadow: inset 0 -7px rgba(255, 255, 255, .12); }
+.person-one { left: 29%; top: 58%; }
+.person-two { left: 58%; top: 50%; }
+.person-two span { background: #b0a084; border-color: #94856e; }
+.person-three { right: 14%; top: 76%; }
+.person-three span { background: #889b91; border-color: #6f8278; }
+.office-plant { position: absolute; width: 25px; height: 42px; }
+.office-plant i { position: absolute; bottom: 0; left: 5px; width: 17px; height: 15px; background: #c5b49a; border: 1px solid #a89578; border-radius: 3px 3px 7px 7px; }
+.office-plant span, .office-plant span::before, .office-plant span::after { position: absolute; width: 12px; height: 20px; background: #91a697; border-radius: 70% 20% 70% 20%; }
+.office-plant span { top: 6px; left: 7px; }
+.office-plant span::before, .office-plant span::after { content: ""; top: 5px; }
+.office-plant span::before { left: -7px; transform: rotate(-42deg); }
+.office-plant span::after { left: 7px; transform: rotate(47deg); }
+.plant-one { right: 8px; top: 87px; }
+.plant-two { left: 8px; bottom: 8px; transform: scale(.82); }
+
+.resource-task-card { padding: 15px; }
+.resource-task-icon { width: 36px; height: 36px; display: grid; place-items: center; color: #58748a; background: #eef3f5; border: 1px solid #dde5e8; border-radius: 9px; }
+.token-metrics { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-top: 13px; }
+.token-metrics > div { min-width: 0; display: grid; gap: 3px; padding: 11px; background: #f8f7f3; border: 1px solid #e6e2da; border-radius: 9px; }
+.token-metrics span, .office-task-stats span { color: #66717a; font-size: 10px; }
+.token-metrics strong { font-size: 20px; font-weight: 650; line-height: 1.1; }
+.token-metrics small { color: #9a8059; font-size: 9px; line-height: 1.35; }
+.office-task-stats { display: grid; grid-template-columns: repeat(3, 1fr); margin-top: 8px; overflow: hidden; background: #f7f9fa; border: 1px solid #e1e6e8; border-radius: 9px; }
+.office-task-stats > div { display: flex; align-items: center; justify-content: space-between; gap: 5px; padding: 9px 10px; border-right: 1px solid #e1e6e8; }
+.office-task-stats > div:last-child { border-right: 0; }
+.office-task-stats strong { font-size: 15px; font-weight: 650; }
+.office-recent-tasks { display: grid; margin-top: 13px; border-top: 1px solid var(--line); }
+.office-recent-heading { display: flex; align-items: center; justify-content: space-between; padding: 11px 1px 7px; }
+.office-recent-heading strong { font-size: 12px; }
+.office-recent-heading span { color: var(--muted); font-size: 9px; }
+.office-recent-task { display: grid; grid-template-columns: 30px minmax(0, 1fr); gap: 9px; align-items: center; padding: 9px 1px; border-top: 1px solid #eeece8; }
+.office-recent-task .task-check { width: 30px; height: 30px; }
+.office-recent-task > div:last-child { min-width: 0; display: grid; gap: 3px; }
+.office-recent-task > div:last-child > div { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.office-recent-task strong { overflow: hidden; font-size: 11px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.office-recent-task p { margin: 0; overflow: hidden; color: #68717a; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.office-recent-task small { overflow: hidden; color: var(--muted); font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+.office-task-empty { display: flex; align-items: center; justify-content: center; gap: 7px; min-height: 58px; color: var(--muted); border-top: 1px solid #eeece8; font-size: 10px; }
 
 .mobile-access-card { display: grid; grid-template-columns: 34px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 11px 12px; color: #53697d; background: #f7f9fa; border: 1px solid #dde4e9; border-radius: 10px; }
 .mobile-access-icon { width: 34px; height: 34px; display: grid; place-items: center; color: #53779e; background: #eaf1f7; border-radius: 9px; }
@@ -357,6 +431,13 @@ textarea:focus { border-color: #8fb8df; box-shadow: 0 0 0 3px rgba(77, 143, 216,
   .workstation-card { grid-template-columns: 72px minmax(0, 1fr) 16px; gap: 10px; padding: 11px; }
   .desk-scene { height: 64px; }
   .status-overview > div { padding-left: 9px; }
+  .office-room { height: 190px; }
+  .office-desk { transform: scale(.86) skewY(-5deg); transform-origin: center; }
+  .office-person { transform: scale(.86); transform-origin: center bottom; }
+  .office-kitchenette { transform: scale(.86); transform-origin: top left; }
+  .office-treadmill { transform: scale(.86) skewY(-8deg); transform-origin: top right; }
+  .token-metrics > div { padding: 9px; }
+  .office-task-stats > div { padding: 8px; }
   .mobile-access-card { grid-template-columns: 32px minmax(0, 1fr); }
   .mobile-access-card button { grid-column: 1 / -1; width: 100%; }
   .employee-identity { grid-template-columns: 72px minmax(0, 1fr); gap: 12px; }

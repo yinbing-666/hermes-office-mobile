@@ -178,7 +178,91 @@ function AgentCard({ agent, active, onClick }: { agent: AgentInfo; active: boole
   );
 }
 
-function OfficePage({ agents, selectedId, setSelectedId, pending, backendOffline, installPrompt, installed, onInstall }: { agents: AgentInfo[]; selectedId: string; setSelectedId: (id: string) => void; pending: number; backendOffline: boolean; installPrompt: BeforeInstallPromptEvent | null; installed: boolean; onInstall: () => void }) {
+function VirtualOfficeCard() {
+  return (
+    <div className="virtual-office-card" aria-label="虚拟办公室空间示意">
+      <div className="virtual-office-heading">
+        <div>
+          <p className="section-kicker">Virtual Workspace</p>
+          <h2>今日办公室</h2>
+        </div>
+        <span><i />协作空间</span>
+      </div>
+      <div className="office-room" aria-hidden="true">
+        <div className="office-floor-grid" />
+        <div className="office-kitchenette">
+          <div className="kitchen-cabinet"><span /><span /><span /></div>
+          <div className="kitchen-counter"><i /><b /></div>
+          <div className="kitchen-stool stool-one" />
+          <div className="kitchen-stool stool-two" />
+        </div>
+        <div className="office-treadmill"><span /><i /><b /></div>
+        <div className="office-desk desk-one"><i /><span /><b /></div>
+        <div className="office-desk desk-two"><i /><span /><b /></div>
+        <div className="office-desk desk-three"><i /><span /><b /></div>
+        <div className="office-desk desk-four"><i /><span /><b /></div>
+        <div className="office-person person-one"><i /><span /></div>
+        <div className="office-person person-two"><i /><span /></div>
+        <div className="office-person person-three"><i /><span /></div>
+        <div className="office-plant plant-one"><i /><span /></div>
+        <div className="office-plant plant-two"><i /><span /></div>
+      </div>
+    </div>
+  );
+}
+
+function ResourceTaskOverview({ tasks }: { tasks: TaskItem[] }) {
+  const runningCount = tasks.filter((task) => task.status === 'running').length;
+  const completedCount = tasks.filter((task) => task.status === 'completed').length;
+  const recentTasks = tasks.slice(0, 3);
+
+  return (
+    <div className="resource-task-card">
+      <div className="resource-task-heading">
+        <div>
+          <p className="section-kicker">Resource & Tasks</p>
+          <h2>资源与任务概览</h2>
+        </div>
+        <div className="resource-task-icon"><OfficeIcon name="activity" size={19} /></div>
+      </div>
+      <div className="token-metrics">
+        <div>
+          <span>今日消耗 Token</span>
+          <strong>--</strong>
+          <small>计量源待接入</small>
+        </div>
+        <div>
+          <span>今日节省 Token</span>
+          <strong>--</strong>
+          <small>本地模型节省待统计</small>
+        </div>
+      </div>
+      <div className="office-task-stats">
+        <div><span>进行中</span><strong>{runningCount}</strong></div>
+        <div><span>已完成</span><strong>{completedCount}</strong></div>
+        <div><span>总计</span><strong>{tasks.length}</strong></div>
+      </div>
+      <div className="office-recent-tasks">
+        <div className="office-recent-heading"><strong>最近任务</strong><span>{recentTasks.length} 条摘要</span></div>
+        {recentTasks.length > 0 ? recentTasks.map((task) => {
+          const meta = taskStatusMeta[task.status];
+          return (
+            <div className="office-recent-task" key={task.id}>
+              <div className={`task-check ${task.status}`}><OfficeIcon name={meta.icon} size={14} /></div>
+              <div>
+                <div><strong>{task.title}</strong><span className={`task-status ${task.status}`}>{meta.label}</span></div>
+                <p>{formatTaskDetail(task, '暂无任务详情')}</p>
+                <small>{task.agent_id ? `${formatAgentName(task.agent_id)} · ` : ''}{taskSourceLabels[task.source] ?? task.source} · {formatTime(task.time)}</small>
+              </div>
+            </div>
+          );
+        }) : <div className="office-task-empty"><OfficeIcon name="clock" size={16} /><span>最近任务待记录</span></div>}
+      </div>
+    </div>
+  );
+}
+
+function OfficePage({ agents, tasks, selectedId, setSelectedId, pending, backendOffline, installPrompt, installed, onInstall }: { agents: AgentInfo[]; tasks: TaskItem[]; selectedId: string; setSelectedId: (id: string) => void; pending: number; backendOffline: boolean; installPrompt: BeforeInstallPromptEvent | null; installed: boolean; onInstall: () => void }) {
   const online = agents.filter((agent) => agent.status === 'online').length;
   const offline = Math.max(agents.length - online, 0);
   return (
@@ -198,6 +282,8 @@ function OfficePage({ agents, selectedId, setSelectedId, pending, backendOffline
           <div><span className="metric-dot pending" /><strong>{pending}</strong><small>待补投</small></div>
         </div>
       </div>
+      <VirtualOfficeCard />
+      <ResourceTaskOverview tasks={tasks} />
       <MobileAccessCard installPrompt={installPrompt} installed={installed} onInstall={onInstall} />
       <div className="section-heading">
         <div>
@@ -799,7 +885,7 @@ export default function App() {
         <div className={`connection-state ${offline ? 'offline' : ''}`}><span />{offline ? '离线数据' : '已连接'}</div>
       </header>
       <OfflineBanner show={offline} />
-      {tab === 'office' && <OfficePage agents={agents} selectedId={selectedId} setSelectedId={setSelectedId} pending={outbox.count} backendOffline={offline} installPrompt={installPrompt} installed={installed} onInstall={handleInstall} />}
+      {tab === 'office' && <OfficePage agents={agents} tasks={tasks} selectedId={selectedId} setSelectedId={setSelectedId} pending={outbox.count} backendOffline={offline} installPrompt={installPrompt} installed={installed} onInstall={handleInstall} />}
       {tab === 'agent' && <AgentPage agent={selectedAgent} tasks={tasks} evolution={evolution} />}
       {tab === 'evolution' && <EvolutionPage evolution={evolution} />}
       {tab === 'activity' && <ActivityPage tasks={tasks} outbox={outbox} onRetryOutbox={handleRetryOutbox} retryStatus={retryStatus} retrying={retrying} autoRetryEnabled={autoRetryEnabled} autoRetryReport={autoRetryReport} onToggleAutoRetry={handleToggleAutoRetry} />}
