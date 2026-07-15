@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
-import { fetchActivity, fetchAgents, fetchCron, fetchEvolution, fetchOutbox, retryOutbox, sendMessage } from './api';
+import { fetchAgents, fetchEvolution, fetchOutbox, fetchTasks, retryOutbox, sendMessage } from './api';
 import { OfficeIcon, type OfficeIconName } from './components/OfficeIcon';
-import type { ActivityItem, AgentInfo, CronJob, EvolutionData, OutboxData } from './types';
+import type { AgentInfo, EvolutionData, OutboxData, TaskItem, TaskStatus } from './types';
 
 type Tab = 'office' | 'agent' | 'evolution' | 'activity';
 
@@ -319,10 +319,38 @@ function EvolutionPage({ evolution }: { evolution: EvolutionData }) {
   );
 }
 
-function ActivityPage({ activity, cronJobs, outbox, onRetryOutbox, retryStatus, retrying }: { activity: ActivityItem[]; cronJobs: CronJob[]; outbox: OutboxData; onRetryOutbox: () => void; retryStatus: string; retrying: boolean }) {
-  const completedStatuses = ['completed', 'complete', 'success', 'succeeded', 'done'];
-  const completedJobs = cronJobs.filter((job) => completedStatuses.includes(job.status.toLowerCase())).length;
-  const activeJobs = cronJobs.filter((job) => job.enabled).length;
+type TaskFilter = 'all' | 'running' | 'completed' | 'queued' | 'interrupted' | 'event';
+
+const taskFilters: Array<{ key: TaskFilter; label: string }> = [
+  { key: 'all', label: '全部' },
+  { key: 'running', label: '进行中' },
+  { key: 'completed', label: '已完成' },
+  { key: 'queued', label: '待补投' },
+  { key: 'interrupted', label: '中断/失败' },
+  { key: 'event', label: '事件' },
+];
+
+const taskStatusMeta: Record<TaskStatus, { label: string; icon: OfficeIconName }> = {
+  running: { label: '进行中', icon: 'clock' },
+  completed: { label: '已完成', icon: 'check' },
+  queued: { label: '待补投', icon: 'database' },
+  failed: { label: '失败', icon: 'alert' },
+  paused: { label: '已暂停', icon: 'alert' },
+  event: { label: '事件', icon: 'activity' },
+};
+
+const taskSourceLabels: Record<string, string> = { cron: 'Cron', outbox: 'Outbox', sent: 'Sent', gateway: 'Gateway' };
+
+function ActivityPage({ tasks, outbox, onRetryOutbox, retryStatus, retrying }: { tasks: TaskItem[]; outbox: OutboxData; onRetryOutbox: () => void; retryStatus: string; retrying: boolean }) {
+  const [filter, setFilter] = useState<TaskFilter>('all');
+  const runningCount = tasks.filter((task) => task.status === 'running').length;
+  const completedCount = tasks.filter((task) => task.status === 'completed').length;
+  const queuedCount = tasks.filter((task) => task.status === 'queued').length;
+  const filteredTasks = tasks.filter((task) => {
+    if (filter === 'all') return true;
+    if (filter === 'interrupted') return task.status === 'failed' || task.status === 'paused';
+    return task.status === filter;
+  });
 
   return (
     <section className="page-section activity-page">
@@ -331,18 +359,18 @@ function ActivityPage({ activity, cronJobs, outbox, onRetryOutbox, retryStatus, 
         <div className="task-header-icon"><OfficeIcon name="activity" size={23} /></div>
       </div>
       <div className="task-stats">
-        <div><span className="task-stat-icon running"><OfficeIcon name="clock" size={16} /></span><strong>{activeJobs}</strong><small>进行中</small></div>
-        <div><span className="task-stat-icon completed"><OfficeIcon name="check" size={16} /></span><strong>{completedJobs}</strong><small>已完成</small></div>
-        <div><span className="task-stat-icon pending"><OfficeIcon name="database" size={16} /></span><strong>{outbox.count}</strong><small>待补投</small></div>
+        <div><span className="task-stat-icon running"><OfficeIcon name="clock" size={16} /></span><strong>{runningCount}</strong><small>进行中</small></div>
+        <div><span className="task-stat-icon completed"><OfficeIcon name="check" size={16} /></span><strong>{completedCount}</strong><small>已完成</small></div>
+        <div><span className="task-stat-icon pending"><OfficeIcon name="database" size={16} /></span><strong>{queuedCount}</strong><small>待补投</small></div>
       </div>
 
       <div className="outbox-card">
         <div className="outbox-main">
           <div className="outbox-icon"><OfficeIcon name="database" size={20} /></div>
-          <div><p>兜底队列</p><strong>{outbox.count} 条任务等待补投</strong><small>{retryStatus || 'Hermes 通道恢复后可逐条重试'}</small></div>
+          <div><p>兜底队列</p><strong>{outbox.count} 条任务待补投</strong><small>{retryStatus || 'Hermes 通道恢复后可逐条重试'}</small></div>
           <button className="mini-button" onClick={onRetryOutbox} disabled={retrying || outbox.count === 0}>
             <OfficeIcon name="refresh" size={15} />
-            {retrying ? '重试中…' : '重试 1 条'}
+            {retrying ? '重试中…' : '逐条重试'}
           </button>
         </div>
         {outbox.items.length > 0 && <div className="outbox-preview">
@@ -352,26 +380,24 @@ function ActivityPage({ activity, cronJobs, outbox, onRetryOutbox, retryStatus, 
         </div>}
       </div>
 
-      <div className="section-heading"><div><p className="section-kicker">Scheduled Tasks</p><h2>Cron 任务</h2></div><span>{cronJobs.length} 项</span></div>
-      <div className="task-card-list">
-        {cronJobs.length === 0 ? <div className="empty-card">暂无 Cron 任务。</div> : cronJobs.slice(0, 8).map((job) => (
-          <div className="task-card" key={job.id}>
-            <div className={`task-check ${job.enabled ? 'active' : ''}`}><OfficeIcon name={job.enabled ? 'clock' : 'check'} size={16} /></div>
-            <div className="task-card-content">
-              <div><strong>{job.name}</strong><span className={job.enabled ? 'task-status active' : 'task-status'}>{job.enabled ? '进行中' : '已停用'}</span></div>
-              <p>{job.schedule ?? '暂无执行计划'}</p>
-              <small>下次：{formatTime(job.next_run_at)} · 最近：{formatTime(job.last_run_at)}</small>
-            </div>
-            <OfficeIcon name="chevron" size={17} className="task-chevron" />
-          </div>
-        ))}
+      <div className="task-filter-chips" aria-label="任务状态筛选">
+        {taskFilters.map((item) => <button key={item.key} className={filter === item.key ? 'selected' : ''} onClick={() => setFilter(item.key)}>{item.label}</button>)}
       </div>
 
-      <div className="recent-events">
-        <div className="recent-events-head"><span><OfficeIcon name="activity" size={18} /><strong>最近事件</strong></span><small>{activity.length ? `${Math.min(activity.length, 12)} 条 Gateway 记录` : '暂无记录'}</small></div>
-        <div className="recent-event-list">
-          {activity.length === 0 ? <p>暂无 Gateway 活动。</p> : activity.slice(0, 6).map((item) => <div key={item.id}>{item.message}</div>)}
-        </div>
+      <div className="section-heading"><div><p className="section-kicker">Unified History</p><h2>统一任务历史</h2></div><span>{filteredTasks.length} 项</span></div>
+      <div className="task-card-list">
+        {filteredTasks.length === 0 ? <div className="empty-card">当前筛选下暂无任务。</div> : filteredTasks.map((task) => {
+          const meta = taskStatusMeta[task.status];
+          return <div className="task-card" key={task.id}>
+            <div className={`task-check ${task.status}`}><OfficeIcon name={meta.icon} size={16} /></div>
+            <div className="task-card-content">
+              <div><strong>{task.title}</strong><span className={`task-status ${task.status}`}>{meta.label}</span></div>
+              <p>{task.detail || task.fallback_reason || '暂无任务详情'}</p>
+              <small>{taskSourceLabels[task.source] ?? task.source}{task.agent_id ? ` · ${task.agent_id}` : ''} · {formatTime(task.time)}{task.fallback_reason ? ` · ${task.fallback_reason}` : ''}</small>
+            </div>
+            <OfficeIcon name="chevron" size={17} className="task-chevron" />
+          </div>;
+        })}
       </div>
     </section>
   );
@@ -381,23 +407,21 @@ export default function App() {
   const [tab, setTab] = useState<Tab>('office');
   const [agents, setAgents] = useState<AgentInfo[]>([]);
   const [selectedId, setSelectedId] = useState('default');
-  const [activity, setActivity] = useState<ActivityItem[]>([]);
   const [evolution, setEvolution] = useState<EvolutionData>({});
-  const [cronJobs, setCronJobs] = useState<CronJob[]>([]);
+  const [tasks, setTasks] = useState<TaskItem[]>([]);
   const [outbox, setOutbox] = useState<OutboxData>({ count: 0, items: [] });
   const [retrying, setRetrying] = useState(false);
   const [retryStatus, setRetryStatus] = useState('');
   const [offline, setOffline] = useState(false);
 
   useEffect(() => {
-    Promise.all([fetchAgents(), fetchActivity(), fetchEvolution(), fetchCron(), fetchOutbox()]).then(([agentRes, activityRes, evolutionRes, cronRes, outboxRes]) => {
+    Promise.all([fetchAgents(), fetchEvolution(), fetchTasks(), fetchOutbox()]).then(([agentRes, evolutionRes, taskRes, outboxRes]) => {
       setAgents(agentRes.data.agents);
       setSelectedId(agentRes.data.agents[0]?.id ?? 'default');
-      setActivity(activityRes.data.items ?? activityRes.data.events ?? []);
       setEvolution(evolutionRes.data);
-      setCronJobs(cronRes.data.jobs ?? []);
+      setTasks(taskRes.data.items ?? []);
       setOutbox(outboxRes.data);
-      setOffline(agentRes.offline || activityRes.offline || evolutionRes.offline || cronRes.offline || outboxRes.offline);
+      setOffline(agentRes.offline || evolutionRes.offline || taskRes.offline || outboxRes.offline);
     });
   }, []);
 
@@ -410,8 +434,9 @@ export default function App() {
     try {
       const result = await retryOutbox(1);
       setRetryStatus(`已尝试 ${result.attempted} 条，成功 ${result.delivered} 条，剩余 ${result.remaining} 条`);
-      const refreshed = await fetchOutbox();
-      setOutbox(refreshed.data);
+      const [refreshedOutbox, refreshedTasks] = await Promise.all([fetchOutbox(), fetchTasks()]);
+      setOutbox(refreshedOutbox.data);
+      setTasks(refreshedTasks.data.items ?? []);
     } catch (error) {
       setRetryStatus(error instanceof Error ? error.message : '重试失败');
     } finally {
@@ -434,7 +459,7 @@ export default function App() {
       {tab === 'office' && <OfficePage agents={agents} selectedId={selectedId} setSelectedId={setSelectedId} pending={outbox.count} />}
       {tab === 'agent' && <AgentPage agent={selectedAgent} />}
       {tab === 'evolution' && <EvolutionPage evolution={evolution} />}
-      {tab === 'activity' && <ActivityPage activity={activity} cronJobs={cronJobs} outbox={outbox} onRetryOutbox={handleRetryOutbox} retryStatus={retryStatus} retrying={retrying} />}
+      {tab === 'activity' && <ActivityPage tasks={tasks} outbox={outbox} onRetryOutbox={handleRetryOutbox} retryStatus={retryStatus} retrying={retrying} />}
       <nav className="tabbar" aria-label="主导航">
         {tabs.map(({ key, label, icon }) => (
           <button key={key} className={tab === key ? 'selected' : ''} onClick={() => setTab(key)}>

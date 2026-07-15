@@ -26,6 +26,7 @@ SKILLS_HOME = HERMES_HOME / "skills"
 PROJECT_ROOT = Path(__file__).resolve().parent
 REPOSITORY_ROOT = PROJECT_ROOT.parent
 OUTBOX_FILE = PROJECT_ROOT / "runtime" / "outbox.jsonl"
+SENT_FILE = PROJECT_ROOT / "runtime" / "sent.jsonl"
 
 PROFILE_DEFINITIONS = (
     {
@@ -235,6 +236,27 @@ def read_outbox_records() -> list[dict[str, Any]]:
     return records
 
 
+def read_jsonl_records(path: Path) -> list[dict[str, Any]]:
+    if not path.is_file():
+        return []
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except (OSError, UnicodeError):
+        return []
+    records: list[dict[str, Any]] = []
+    for index, line in enumerate(lines, start=1):
+        if not line.strip():
+            continue
+        try:
+            item = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(item, dict):
+            item["id"] = index
+            records.append(item)
+    return records
+
+
 def write_outbox_records(records: list[dict[str, Any]]) -> None:
     OUTBOX_FILE.parent.mkdir(parents=True, exist_ok=True)
     tmp_path = OUTBOX_FILE.with_suffix(".jsonl.tmp")
@@ -246,8 +268,7 @@ def write_outbox_records(records: list[dict[str, Any]]) -> None:
 
 
 def write_sent_record(record: dict[str, Any], response_preview: str) -> None:
-    sent_file = OUTBOX_FILE.parent / "sent.jsonl"
-    sent_file.parent.mkdir(parents=True, exist_ok=True)
+    SENT_FILE.parent.mkdir(parents=True, exist_ok=True)
     payload = {key: value for key, value in record.items() if key != "id"}
     payload.update({
         "delivered_at": utc_now(),
@@ -255,7 +276,7 @@ def write_sent_record(record: dict[str, Any], response_preview: str) -> None:
         "channel": "api_server",
         "response_preview": response_preview,
     })
-    with sent_file.open("a", encoding="utf-8") as handle:
+    with SENT_FILE.open("a", encoding="utf-8") as handle:
         handle.write(json.dumps(payload, ensure_ascii=False) + "\n")
 
 
@@ -295,6 +316,31 @@ def safe_string(value: Any, limit: int = 160) -> str | None:
     return None
 
 
+def task_time_value(value: Any) -> str | None:
+    return safe_string(value, limit=64)
+
+
+def task_sort_value(value: str | None) -> float:
+    if not value:
+        return 0
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00")).timestamp()
+    except ValueError:
+        try:
+            return datetime.strptime(value, "%Y-%m-%d %H:%M:%S,%f").replace(
+                tzinfo=timezone(timedelta(hours=8))
+            ).timestamp()
+        except ValueError:
+            return 0
+
+
+def message_title(value: Any, fallback: str) -> str:
+    text = redact_text(str(value or "").strip(), limit=120)
+    if not text:
+        return fallback
+    return text[:80] + ("…" if len(text) > 80 else "")
+
+
 def first_value(mapping: dict[str, Any], keys: Iterable[str]) -> Any:
     for key in keys:
         if key in mapping and mapping[key] is not None:
@@ -323,7 +369,7 @@ def cron_schedule(job: dict[str, Any]) -> str | None:
     return safe_string(value)
 
 
-def cron_summary() -> dict[str, Any]:
+def cron_summary(limit: int | None = 25) -> dict[str, Any]:
     metadata = file_metadata(CRON_JOBS)
     if not metadata["present"]:
         return {
@@ -370,6 +416,9 @@ def cron_summary() -> dict[str, Any]:
                 or f"Job {index + 1}",
                 "enabled": enabled,
                 "status": status,
+                "agent_id": safe_string(
+                    first_value(job, ("agent_id", "profile", "profile_id")), limit=64
+                ),
                 "schedule": cron_schedule(job),
                 "next_run_at": safe_string(
                     first_value(job, ("next_run_at", "next_run", "nextRunAt"))
@@ -388,8 +437,8 @@ def cron_summary() -> dict[str, Any]:
         "enabled": enabled_count,
         "disabled": len(jobs) - enabled_count,
         "status_counts": dict(status_counts),
-        "jobs": compact_jobs[:25],
-        "truncated": len(compact_jobs) > 25,
+        "jobs": compact_jobs if limit is None else compact_jobs[:limit],
+        "truncated": limit is not None and len(compact_jobs) > limit,
     }
 
 
@@ -693,6 +742,77 @@ def cron() -> dict[str, Any]:
     return {"generated_at": utc_now(), **cron_summary()}
 
 
+@app.get("/api/tasks")
+def tasks() -> dict[str, Any]:
+    items: list[dict[str, Any]] = []
+
+    for job in cron_summary(limit=None).get("jobs", []):
+        if not isinstance(job, dict):
+            continue
+        schedule = safe_string(job.get("schedule")) or "暂无执行计划"
+        last_status = safe_string(job.get("status")) or "unknown"
+        items.append({
+            "id": f"cron:{job.get('id')}",
+            "title": safe_string(job.get("name"), limit=120) or "Cron 任务",
+            "agent_id": safe_string(job.get("agent_id"), limit=64),
+            "status": "running" if job.get("enabled") else "paused",
+            "source": "cron",
+            "time": task_time_value(job.get("last_run_at") or job.get("next_run_at")),
+            "detail": f"计划 {schedule} · 最近状态 {last_status}",
+            "fallback_reason": None,
+        })
+
+    for record in read_outbox_records():
+        queued = record.get("queued") is not False
+        items.append({
+            "id": f"outbox:{record.get('id')}",
+            "title": message_title(record.get("message"), "待补投任务"),
+            "agent_id": safe_string(record.get("agent_id"), limit=64),
+            "status": "queued" if queued else "failed",
+            "source": "outbox",
+            "time": task_time_value(record.get("stored_at")),
+            "detail": "等待 Hermes 通道恢复后补投" if queued else "补投已中断",
+            "fallback_reason": safe_string(record.get("fallback_reason")),
+        })
+
+    for record in read_jsonl_records(SENT_FILE):
+        items.append({
+            "id": f"sent:{record.get('id')}",
+            "title": message_title(record.get("message"), "已投递任务"),
+            "agent_id": safe_string(record.get("agent_id"), limit=64),
+            "status": "completed",
+            "source": "sent",
+            "time": task_time_value(record.get("delivered_at") or record.get("stored_at")),
+            "detail": safe_string(record.get("response_preview"), limit=240) or "已发送到 Hermes",
+            "fallback_reason": safe_string(record.get("fallback_reason")),
+        })
+
+    gateway_lines = read_recent_lines(GATEWAY_LOG, max_lines=40)
+    for index, line in enumerate(gateway_lines, start=1):
+        match = re.match(r"^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d{3})\s+(.+)$", line)
+        event_time = match.group(1) if match else None
+        detail = match.group(2) if match else line
+        items.append({
+            "id": f"gateway:{index}:{event_time or 'unknown'}",
+            "title": message_title(detail, "Gateway 事件"),
+            "agent_id": None,
+            "status": "event",
+            "source": "gateway",
+            "time": event_time,
+            "detail": redact_text(detail, limit=500),
+            "fallback_reason": None,
+        })
+
+    items.sort(key=lambda item: task_sort_value(item.get("time")), reverse=True)
+    status_counts = Counter(str(item["status"]) for item in items)
+    return {
+        "generated_at": utc_now(),
+        "total": len(items),
+        "status_counts": dict(status_counts),
+        "items": items,
+    }
+
+
 @app.get("/api/outbox")
 def outbox() -> dict[str, Any]:
     records = read_outbox_records()
@@ -808,6 +928,16 @@ def queue_message(payload: MessageRequest) -> Any:
         else:
             try:
                 result = deliver_to_api_server(port, key, message)
+                response_preview = redact_secret(result, key, limit=240)
+                write_sent_record(
+                    {
+                        "stored_at": stored_at,
+                        "agent_id": agent_id,
+                        "message": safe_message,
+                        "source": "hermes-office-mobile",
+                    },
+                    response_preview,
+                )
                 return {
                     "ok": True,
                     "delivered": True,
@@ -816,7 +946,7 @@ def queue_message(payload: MessageRequest) -> Any:
                     "agent_id": agent_id,
                     "message_preview": preview,
                     "stored_at": stored_at,
-                    "response_preview": redact_secret(result, key, limit=240),
+                    "response_preview": response_preview,
                 }
             except (
                 OSError,

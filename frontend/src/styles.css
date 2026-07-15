@@ -234,17 +234,28 @@ textarea:focus { border-color: #8fb8df; box-shadow: 0 0 0 3px rgba(77, 143, 216,
 .outbox-preview span { color: var(--text); }
 .outbox-preview small { grid-column: 2; color: var(--muted); }
 
+.task-filter-chips { display: flex; gap: 7px; overflow-x: auto; padding: 1px 0 3px; scrollbar-width: none; }
+.task-filter-chips::-webkit-scrollbar { display: none; }
+.task-filter-chips button { flex: 0 0 auto; padding: 7px 10px; color: #69727c; background: #f1f1ee; border: 1px solid #e1e2df; border-radius: 999px; font-size: 10px; white-space: nowrap; }
+.task-filter-chips button.selected { color: #356f9d; background: #edf5fb; border-color: #d3e2ed; }
+
 .task-card-list { display: grid; gap: 8px; }
 .task-card { display: grid; grid-template-columns: 34px minmax(0, 1fr) 17px; gap: 10px; align-items: center; padding: 13px; }
 .task-check { width: 34px; height: 34px; display: grid; place-items: center; color: #89929a; background: var(--surface-soft); border: 1px solid var(--line); border-radius: 9px; }
-.task-check.active { color: #477b9f; background: #eef5fa; border-color: #d7e5ee; }
+.task-check.running, .task-check.event { color: #477b9f; background: #eef5fa; border-color: #d7e5ee; }
+.task-check.completed { color: #39765a; background: #f0f7f3; border-color: #d8e8de; }
+.task-check.queued { color: #946c35; background: #faf3e8; border-color: #eee1ca; }
+.task-check.failed, .task-check.paused { color: #a45858; background: #fbf0f0; border-color: #efd9d9; }
 .task-card-content { min-width: 0; display: grid; gap: 4px; }
 .task-card-content > div { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .task-card-content strong { overflow: hidden; font-size: 13px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
 .task-card-content p { margin: 0; overflow: hidden; color: #5f6871; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
-.task-card-content small { color: var(--muted); font-size: 9px; }
+.task-card-content small { overflow: hidden; color: var(--muted); font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
 .task-status { flex: 0 0 auto; padding: 3px 6px; color: var(--muted); background: var(--surface-soft); border: 1px solid var(--line); border-radius: 5px; font-size: 9px; }
-.task-status.active { color: #39765a; background: #f3f8f5; border-color: #dbe9e1; }
+.task-status.running, .task-status.event { color: #39729d; background: #f1f6fa; border-color: #d8e5ed; }
+.task-status.completed { color: #39765a; background: #f3f8f5; border-color: #dbe9e1; }
+.task-status.queued { color: #8b6738; background: #faf5eb; border-color: #eee1ca; }
+.task-status.failed, .task-status.paused { color: #9a5050; background: #fbf1f1; border-color: #efd9d9; }
 .task-chevron { color: #adb2b7; }
 
 .recent-events { overflow: hidden; color: var(--muted); }

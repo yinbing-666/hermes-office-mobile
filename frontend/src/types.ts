@@ -32,6 +32,25 @@ export interface CronJob {
   last_run_at?: string | null;
 }
 
+export type TaskStatus = 'running' | 'completed' | 'queued' | 'failed' | 'paused' | 'event';
+
+export interface TaskItem {
+  id: string;
+  title: string;
+  agent_id?: string | null;
+  status: TaskStatus;
+  source: 'cron' | 'outbox' | 'sent' | 'gateway' | string;
+  time?: string | null;
+  detail?: string | null;
+  fallback_reason?: string | null;
+}
+
+export interface TasksData {
+  total: number;
+  status_counts?: Partial<Record<TaskStatus, number>>;
+  items: TaskItem[];
+}
+
 export interface EvolutionData {
   skills?: {
     available: boolean;

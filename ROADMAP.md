@@ -18,6 +18,8 @@ MVP v1：Hermes Office Mobile 已跑通本地最小闭环。
 - 完成 Marvis Office 风格 UI 第二刀：进化档案升级为产品化成长档案，包含成长概览、能力矩阵、最近进化时间线和三位员工的人格文件状态卡。
 - 补齐进化档案文档能力：`/api/evolution` 从 Skill 修改时间、profile 文件状态和项目 Git 提交派生最近 7 天增长趋势、真实里程碑与四类技能树，前端增加条形趋势、时间线和技能分组展示。
 - 任务动态升级为移动任务清单：增加进行中、已完成、待补投统计，保留 outbox「重试 1 条」，Cron 改为任务卡片，Gateway 日志降级为折叠最近事件。
+- 补齐统一任务历史：新增 `GET /api/tasks` 聚合 Cron、outbox、sent 与 Gateway activity，统一六类状态；任务页改用统一列表、统一统计和全部/进行中/已完成/待补投/中断失败/事件筛选。
+- 成功派活和 outbox 重试成功均写入 `backend/runtime/sent.jsonl`；sent 文件缺失时按空历史返回。
 - 主 UI 移除 emoji 与非统一图标，保留四个 Tab、派活和 outbox 重试数据链路。
 - 使用 Dragon Image2 生成并接入小黑、小橙、小金三位员工头像，替换临时 SVG 占位图。
 - 完成前端生产构建验证：`npm run build`。
@@ -32,12 +34,13 @@ MVP v1：Hermes Office Mobile 已跑通本地最小闭环。
 - `GET /api/agents`：200，返回 3 个 Agent。
 - `POST /api/messages`：API Server 可用时直接发送；端口、key 或请求异常时返回 outbox 兜底结果。
 - `GET /api/outbox`：200，返回兜底队列数量和最近消息。
+- `GET /api/tasks`：200，返回统一排序的任务历史与状态统计。
 - `POST /api/outbox/retry`：200，可按 `limit` 小步重试，失败项继续保留。
 - 浏览器验证：`/api/agents`、`/api/activity`、`/api/evolution`、`/api/cron`、`/api/messages` 均 200，network failures 为 0。
 
 ## 下一步
 
-1. 增加 outbox 重试/消费机制，恢复后自动补投。
+1. 增加 outbox 自动消费机制，恢复后自动补投。
 2. 增加移动端访问方式：Tailscale 内网优先。
 3. 继续打磨办公室交互：从工位卡快速进入员工详情，并补充最近任务摘要。
 4. 增加 Agent 最近会话和最近任务摘要。

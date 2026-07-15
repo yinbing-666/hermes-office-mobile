@@ -1,4 +1,4 @@
-import type { ActivityItem, AgentInfo, ApiState, CronJob, EvolutionData, MessageResponse, OutboxData, OutboxRetryResponse } from './types';
+import type { ActivityItem, AgentInfo, ApiState, CronJob, EvolutionData, MessageResponse, OutboxData, OutboxRetryResponse, TaskItem, TasksData } from './types';
 
 const mockAgents: AgentInfo[] = [
   { id: 'default', name: '小黑', status: 'online', port: 8642, port_listening: true, profile_available: true },
@@ -18,6 +18,11 @@ const mockEvolution: EvolutionData = {
 
 const mockCron: CronJob[] = [
   { id: 'mock-1', name: '离线模拟：每日晨报', enabled: true, status: 'unknown', schedule: '0 8 * * *' },
+];
+
+const mockTasks: TaskItem[] = [
+  { id: 'mock-running', title: '离线模拟：每日晨报', agent_id: 'default', status: 'running', source: 'cron', detail: '等待后端任务接口连接' },
+  { id: 'mock-event', title: '离线模拟：Gateway 活动', status: 'event', source: 'gateway', detail: '当前展示离线预览数据' },
 ];
 
 async function getJson<T>(url: string, fallback: T): Promise<ApiState<T>> {
@@ -44,6 +49,10 @@ export function fetchEvolution() {
 
 export function fetchCron() {
   return getJson<{ jobs: CronJob[]; total?: number; enabled?: number }>('/api/cron', { jobs: mockCron, total: 1, enabled: 1 });
+}
+
+export function fetchTasks() {
+  return getJson<TasksData>('/api/tasks', { total: mockTasks.length, items: mockTasks });
 }
 
 export async function sendMessage(agentId: string, message: string): Promise<MessageResponse> {
