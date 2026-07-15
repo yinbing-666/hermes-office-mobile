@@ -193,7 +193,7 @@ def deliver_to_api_server(port: int, key: str, message: str) -> str:
         },
         method="POST",
     )
-    with urllib.request.urlopen(request, timeout=12) as response:
+    with urllib.request.urlopen(request, timeout=45) as response:
         payload = json.loads(response.read().decode("utf-8"))
     return response_content(payload)
 

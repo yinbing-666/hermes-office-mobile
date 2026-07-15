@@ -75,7 +75,7 @@ curl -sS -X POST http://127.0.0.1:8787/api/messages \
 |---|---|
 | `GET /api/evolution` | 返回 Skill 与档案状态，并从真实修改时间和项目 Git 记录派生 `trend`、`milestones`、`skill_tree` |
 | `GET /api/tasks` | 聚合 Cron、`outbox.jsonl`、`sent.jsonl` 和 Gateway activity，状态统一为 `running/completed/queued/failed/paused/event` |
-| `POST /api/messages` | 发送任务，优先 API Server；成功写入 sent 历史，失败写入 outbox |
+| `POST /api/messages` | 发送任务，优先 API Server；成功写入 sent 历史，失败写入 outbox。BFF 调用 Hermes API Server 的超时为 45 秒，避免慢响应被误判为失败 |
 | `GET /api/outbox` | 查看兜底队列最近 50 条 |
 | `POST /api/outbox/retry` | 小步重试 outbox，默认/建议一次 1 条，避免手机端长时间等待 |
 

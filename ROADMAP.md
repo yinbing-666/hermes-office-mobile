@@ -52,7 +52,7 @@ MVP v1：Hermes Office Mobile 已跑通本地最小闭环，并完成工作空�
 - `cd frontend && npm run build`：通过。
 - `GET /api/health`：200。
 - `GET /api/agents`：200，返回 3 个 Agent。
-- `POST /api/messages`：API Server 可用时直接发送；端口、key 或请求异常时返回 outbox 兜底结果。
+- `POST /api/messages`：API Server 可用时直接发送；端口、key 或请求异常时返回 outbox 兜底结果；BFF 到 Hermes API Server 的派活超时已从 12 秒提升到 45 秒，避免慢响应误入 outbox。
 - `GET /api/outbox`：200，返回兜底队列数量和最近消息。
 - `GET /api/tasks`：200，返回统一排序的任务历史与状态统计。
 - `POST /api/outbox/retry`：200，可按 `limit` 小步重试，失败项继续保留。
