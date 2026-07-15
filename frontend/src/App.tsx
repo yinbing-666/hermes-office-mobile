@@ -191,24 +191,86 @@ function AgentPage({ agent }: { agent?: AgentInfo }) {
 function EvolutionPage({ evolution }: { evolution: EvolutionData }) {
   const recentSkills = evolution.skills?.recent ?? [];
   const profiles = evolution.profiles ?? [];
+  const skillCount = evolution.skills?.count ?? recentSkills.length;
+  const readyProfiles = profiles.filter((profile) => profile.profile_available && profile.soul?.present && profile.agent?.present).length;
+  const datedRecords = [
+    ...recentSkills.map((skill) => ({
+      id: `skill-${skill.name}`,
+      title: skill.name,
+      detail: 'Skill 能力记录',
+      modifiedAt: skill.modified_at,
+      icon: 'growth' as OfficeIconName,
+    })),
+    ...profiles.flatMap((profile) => [
+      { id: `${profile.profile}-soul`, title: `${profile.name} · SOUL.md`, detail: '人格文件记录', modifiedAt: profile.soul?.modified_at, icon: 'user' as OfficeIconName },
+      { id: `${profile.profile}-agent`, title: `${profile.name} · AGENT.md`, detail: '员工配置记录', modifiedAt: profile.agent?.modified_at, icon: 'file' as OfficeIconName },
+    ]),
+  ].filter((record) => record.modifiedAt);
+  const recentEvolution = datedRecords
+    .sort((left, right) => new Date(right.modifiedAt ?? 0).getTime() - new Date(left.modifiedAt ?? 0).getTime())
+    .slice(0, 8);
+  const latestEvolution = recentEvolution[0]?.modifiedAt ?? null;
+  const capabilityGroups: Array<{ title: string; icon: OfficeIconName; keywords: string[] }> = [
+    { title: '工具调用', icon: 'terminal', keywords: ['api', 'cli', 'tool', 'browser', 'search', 'shell', 'mcp'] },
+    { title: '内容理解', icon: 'search', keywords: ['doc', 'pdf', 'content', 'media', 'read', 'write', 'summary', 'transcript'] },
+    { title: '专家协作', icon: 'agent', keywords: ['agent', 'team', 'expert', 'delegate', 'invest', 'collaborat'] },
+    { title: '自动化任务', icon: 'activity', keywords: ['task', 'workflow', 'cron', 'automation', 'schedule'] },
+  ];
+  const capabilityMatrix = capabilityGroups.map((group) => {
+    const matched = recentSkills.filter((skill) => group.keywords.some((keyword) => skill.name.toLowerCase().includes(keyword)));
+    return { ...group, matched };
+  });
+
   return (
-    <section className="page-section">
-      <div className="section-heading"><div><p className="section-kicker">Growth Log</p><h2>进化档案</h2></div></div>
-      <div className="timeline-card">
-        <div className="card-title-row"><OfficeIcon name="growth" size={19} /><h3>最近 Skills</h3></div>
-        {recentSkills.length === 0 ? <p>暂无可展示 Skill 变化。</p> : recentSkills.slice(0, 8).map((skill) => (
-          <div className="timeline-item" key={skill.name}>
-            <span />
-            <div><strong>{skill.name}</strong><small>{formatTime(skill.modified_at)}</small></div>
+    <section className="page-section evolution-page">
+      <div className="growth-hero">
+        <div className="growth-hero-heading">
+          <div className="overview-mark"><OfficeIcon name="growth" size={24} /></div>
+          <div><p className="eyebrow">Growth Archive</p><h1>进化档案</h1></div>
+        </div>
+        <p>把能力沉淀、人格文件与最近变化整理成可持续追踪的成长档案。</p>
+        <div className="growth-summary">
+          <div><strong>{evolution.skills?.available ? skillCount : '暂无'}</strong><span>能力记录</span></div>
+          <div><strong>{profiles.length ? `${readyProfiles}/${profiles.length}` : '暂无'}</strong><span>档案完整</span></div>
+          <div><strong>{formatTime(latestEvolution)}</strong><span>最近进化</span></div>
+        </div>
+      </div>
+
+      <div className="section-heading"><div><p className="section-kicker">Capability Matrix</p><h2>能力矩阵</h2></div><span>按现有 Skill 名称归档</span></div>
+      <div className="capability-grid">
+        {capabilityMatrix.map((capability) => (
+          <div className="capability-card" key={capability.title}>
+            <div className="capability-icon"><OfficeIcon name={capability.icon} size={18} /></div>
+            <div><strong>{capability.title}</strong><small>{capability.matched.length ? `已记录 ${capability.matched.length} 项` : '待记录'}</small></div>
+            <span className={capability.matched.length ? 'capability-state recorded' : 'capability-state'}>{capability.matched.length ? '已有沉淀' : '暂无数据'}</span>
           </div>
         ))}
       </div>
-      <div className="timeline-card">
-        <div className="card-title-row"><OfficeIcon name="file" size={19} /><h3>人格文件</h3></div>
-        {profiles.map((profile) => (
-          <div className="timeline-item" key={profile.profile}>
-            <span />
-            <div><strong>{profile.name} / {profile.profile}</strong><small>SOUL：{formatTime(profile.soul?.modified_at)}</small></div>
+
+      <div className="archive-card">
+        <div className="card-title-row"><OfficeIcon name="clock" size={19} /><h3>最近进化时间线</h3></div>
+        {recentEvolution.length === 0 ? <p className="archive-empty">暂无进化记录。</p> : recentEvolution.map((record) => (
+          <div className="evolution-event" key={record.id}>
+            <div className="event-icon"><OfficeIcon name={record.icon} size={16} /></div>
+            <div><strong>{record.title}</strong><small>{record.detail}</small></div>
+            <time>{formatTime(record.modifiedAt)}</time>
+          </div>
+        ))}
+      </div>
+
+      <div className="section-heading"><div><p className="section-kicker">Employee Profiles</p><h2>员工档案卡</h2></div><span>{profiles.length || 0} 份档案</span></div>
+      <div className="profile-archive-list">
+        {profiles.length === 0 ? <div className="empty-card">暂无员工档案。</div> : profiles.map((profile) => (
+          <div className="profile-archive-card" key={profile.profile}>
+            <div className="profile-archive-head">
+              <div className="profile-avatar"><OfficeIcon name="user" size={20} /></div>
+              <div><strong>{profile.name}</strong><small>{profile.profile}</small></div>
+              <span className={profile.profile_available ? 'profile-state ready' : 'profile-state'}>{profile.profile_available ? '档案可用' : '档案暂无'}</span>
+            </div>
+            <div className="profile-file-grid">
+              <div><OfficeIcon name="user" size={16} /><span><strong>SOUL.md</strong><small>{profile.soul?.present ? formatTime(profile.soul.modified_at) : '暂无'}</small></span></div>
+              <div><OfficeIcon name="file" size={16} /><span><strong>AGENT.md</strong><small>{profile.agent?.present ? formatTime(profile.agent.modified_at) : '暂无'}</small></span></div>
+            </div>
           </div>
         ))}
       </div>
@@ -217,34 +279,58 @@ function EvolutionPage({ evolution }: { evolution: EvolutionData }) {
 }
 
 function ActivityPage({ activity, cronJobs, outbox, onRetryOutbox, retryStatus, retrying }: { activity: ActivityItem[]; cronJobs: CronJob[]; outbox: OutboxData; onRetryOutbox: () => void; retryStatus: string; retrying: boolean }) {
+  const completedStatuses = ['completed', 'complete', 'success', 'succeeded', 'done'];
+  const completedJobs = cronJobs.filter((job) => completedStatuses.includes(job.status.toLowerCase())).length;
+  const activeJobs = cronJobs.filter((job) => job.enabled).length;
+
   return (
-    <section className="page-section">
-      <div className="section-heading"><div><p className="section-kicker">Task Board</p><h2>任务动态</h2></div></div>
-      <div className="timeline-card">
-        <div className="card-title-row"><OfficeIcon name="clock" size={19} /><h3>Cron</h3></div>
-        {cronJobs.slice(0, 8).map((job) => (
-          <div className="job-row" key={job.id}>
-            <div><strong>{job.name}</strong><small>{job.schedule ?? '未设置 schedule'}</small></div>
-            <span className={job.enabled ? 'job-enabled' : 'job-disabled'}>{job.enabled ? 'enabled' : 'paused'}</span>
-          </div>
-        ))}
+    <section className="page-section activity-page">
+      <div className="task-header">
+        <div><p className="eyebrow">Task Board</p><h1>任务动态</h1><span>移动任务清单与投递状态</span></div>
+        <div className="task-header-icon"><OfficeIcon name="activity" size={23} /></div>
       </div>
-      <div className="timeline-card">
-        <div className="card-title-row"><OfficeIcon name="database" size={19} /><h3>兜底队列</h3></div>
-        <div className="job-row">
-          <div><strong>{outbox.count} 条待补投</strong><small>{retryStatus || '端口恢复后可手动重试投递'}</small></div>
+      <div className="task-stats">
+        <div><span className="task-stat-icon running"><OfficeIcon name="clock" size={16} /></span><strong>{activeJobs}</strong><small>进行中</small></div>
+        <div><span className="task-stat-icon completed"><OfficeIcon name="check" size={16} /></span><strong>{completedJobs}</strong><small>已完成</small></div>
+        <div><span className="task-stat-icon pending"><OfficeIcon name="database" size={16} /></span><strong>{outbox.count}</strong><small>待补投</small></div>
+      </div>
+
+      <div className="outbox-card">
+        <div className="outbox-main">
+          <div className="outbox-icon"><OfficeIcon name="database" size={20} /></div>
+          <div><p>兜底队列</p><strong>{outbox.count} 条任务等待补投</strong><small>{retryStatus || 'Hermes 通道恢复后可逐条重试'}</small></div>
           <button className="mini-button" onClick={onRetryOutbox} disabled={retrying || outbox.count === 0}>
             <OfficeIcon name="refresh" size={15} />
             {retrying ? '重试中…' : '重试 1 条'}
           </button>
         </div>
-        {outbox.items.slice(-5).reverse().map((item) => (
-          <div className="log-line" key={item.id}>{item.agent_id} · {item.message_preview} · {item.fallback_reason ?? 'queued'}</div>
+        {outbox.items.length > 0 && <div className="outbox-preview">
+          {outbox.items.slice(-3).reverse().map((item) => (
+            <div key={item.id}><strong>{item.agent_id}</strong><span>{item.message_preview}</span><small>{item.fallback_reason ?? '等待投递'}</small></div>
+          ))}
+        </div>}
+      </div>
+
+      <div className="section-heading"><div><p className="section-kicker">Scheduled Tasks</p><h2>Cron 任务</h2></div><span>{cronJobs.length} 项</span></div>
+      <div className="task-card-list">
+        {cronJobs.length === 0 ? <div className="empty-card">暂无 Cron 任务。</div> : cronJobs.slice(0, 8).map((job) => (
+          <div className="task-card" key={job.id}>
+            <div className={`task-check ${job.enabled ? 'active' : ''}`}><OfficeIcon name={job.enabled ? 'clock' : 'check'} size={16} /></div>
+            <div className="task-card-content">
+              <div><strong>{job.name}</strong><span className={job.enabled ? 'task-status active' : 'task-status'}>{job.enabled ? '进行中' : '已停用'}</span></div>
+              <p>{job.schedule ?? '暂无执行计划'}</p>
+              <small>下次：{formatTime(job.next_run_at)} · 最近：{formatTime(job.last_run_at)}</small>
+            </div>
+            <OfficeIcon name="chevron" size={17} className="task-chevron" />
+          </div>
         ))}
       </div>
-      <div className="timeline-card">
-        <div className="card-title-row"><OfficeIcon name="activity" size={19} /><h3>Gateway 活动</h3></div>
-        {activity.slice(0, 12).map((item) => <div className="log-line" key={item.id}>{item.message}</div>)}
+
+      <div className="recent-events">
+        <div className="recent-events-head"><span><OfficeIcon name="activity" size={18} /><strong>最近事件</strong></span><small>{activity.length ? `${Math.min(activity.length, 12)} 条 Gateway 记录` : '暂无记录'}</small></div>
+        <div className="recent-event-list">
+          {activity.length === 0 ? <p>暂无 Gateway 活动。</p> : activity.slice(0, 6).map((item) => <div key={item.id}>{item.message}</div>)}
+        </div>
       </div>
     </section>
   );

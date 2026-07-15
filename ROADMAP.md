@@ -15,6 +15,8 @@ MVP v1：Hermes Office Mobile 已跑通本地最小闭环。
 - 实现长期可用版第二刀：`GET /api/outbox` 展示兜底队列，`POST /api/outbox/retry` 小步重试投递，成功写入 `backend/runtime/sent.jsonl`，失败保留 outbox。
 - 任务动态页增加「兜底队列」模块和「重试 1 条」按钮，避免移动端长时间卡在批量重试。
 - 完成 Marvis Office 风格 UI 第一刀：办公室状态概览、员工工位卡、统一线性 SVG 图标、浅色克制视觉和移动底部导航。
+- 完成 Marvis Office 风格 UI 第二刀：进化档案升级为产品化成长档案，包含成长概览、能力矩阵、最近进化时间线和三位员工的人格文件状态卡。
+- 任务动态升级为移动任务清单：增加进行中、已完成、待补投统计，保留 outbox「重试 1 条」，Cron 改为任务卡片，Gateway 日志降级为折叠最近事件。
 - 主 UI 移除 emoji 与非统一图标，保留四个 Tab、派活和 outbox 重试数据链路。
 - 完成前端生产构建验证：`npm run build`。
 - 完成后端语法和 API 烟测。

@@ -7,8 +7,8 @@
 - 办公室首页：展示在线、离线、待补投概览，以及带职责信息的员工工位卡。
 - Agent 详情：展示 profile、端口、SOUL.md / AGENT.md 状态。
 - 派活入口：优先把任务发送到对应 Hermes API Server；不可用时写入 `backend/runtime/outbox.jsonl` 兜底。
-- 进化档案：展示最近 Skills 和 profile 人格文件更新时间。
-- 任务动态：展示 Cron 和 gateway 活动。
+- 进化档案：以成长概览、能力矩阵、最近进化时间线和员工档案卡展示 `evolution.skills` / `evolution.profiles` 的真实记录；缺失项明确显示暂无或待记录。
+- 任务动态：采用移动任务清单布局，展示进行中、已完成、待补投统计，保留兜底队列逐条重试，并将 Cron 转为任务卡片、Gateway 活动弱化为可折叠最近事件。
 - 移动导航：保留办公室、员工、进化、任务四个 Tab，使用统一线性图标和浅蓝选中态。
 
 ## 启动
