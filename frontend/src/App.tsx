@@ -12,7 +12,20 @@ type BeforeInstallPromptEvent = Event & {
 type RoleMeta = { role: string; focus: string; tone: string; avatar: string; tags: string[] };
 type AutoRetryReport = { completed: boolean; lastAttemptAt: string | null; delivered: number | null; remaining: number | null; error: string };
 
-const fallbackRole: RoleMeta = { role: 'Hermes Agent', focus: '自定义智能员工', tone: 'blue', avatar: '', tags: ['任务执行', '协作响应'] };
+const fallbackRole: RoleMeta = { role: 'Hermes 智能员工', focus: '自定义智能员工', tone: 'blue', avatar: '', tags: ['任务执行', '协作响应'] };
+
+const agentNameMap: Record<string, string> = {
+  default: '小黑',
+  'media-ops': '小橙',
+  investor: '小金',
+};
+
+const issueReasonMap: Record<string, string> = {
+  api_request_failed: 'Hermes 通道请求失败',
+  api_key_unavailable: '鉴权配置待恢复',
+  api_server_offline: 'Hermes 服务未连接',
+  profile_not_found: '员工档案未找到',
+};
 
 const roleMap: Record<string, RoleMeta> = {
   default: {
@@ -57,6 +70,39 @@ function formatAttemptTime(value?: string | null) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
   return date.toLocaleString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+}
+
+function formatAgentName(agentId?: string | null) {
+  if (!agentId) return '';
+  return agentNameMap[agentId] ?? agentId;
+}
+
+function isIssueCode(value?: string | null) {
+  if (!value) return false;
+  return Boolean(issueReasonMap[value]) || /^[a-z0-9]+(?:_[a-z0-9]+)+$/i.test(value);
+}
+
+function formatIssueReason(value?: string | null) {
+  if (!value) return '';
+  return issueReasonMap[value] ?? (isIssueCode(value) ? `异常原因：${value.split('_').join(' ')}` : value);
+}
+
+function formatTechnicalMeta(parts: Array<string | null | undefined>) {
+  const technicalParts = parts.filter((part): part is string => Boolean(part));
+  return technicalParts.length > 0 ? `技术信息：${technicalParts.join(' · ')}` : '';
+}
+
+function formatTaskDetail(task: TaskItem, emptyText: string) {
+  if (task.detail) return formatIssueReason(task.detail);
+  if (task.fallback_reason) return formatIssueReason(task.fallback_reason);
+  return emptyText;
+}
+
+function formatTaskTechnicalMeta(task: TaskItem) {
+  return formatTechnicalMeta([
+    task.agent_id ? `员工标识 ${task.agent_id}` : null,
+    task.fallback_reason ? `原始原因 ${task.fallback_reason}` : null,
+  ]);
 }
 
 function StatusPill({ status }: { status: string }) {
@@ -198,7 +244,7 @@ function AgentPage({ agent, tasks, evolution }: { agent?: AgentInfo; tasks: Task
     setSendStatus(null);
   }, [agent?.id]);
 
-  if (!agent) return <div className="empty-card">暂无 Agent 数据。</div>;
+  if (!agent) return <div className="empty-card">暂无员工数据。</div>;
   const meta = roleMap[agent.id] ?? fallbackRole;
   const evolutionProfile = evolution.profiles?.find((profile) => profile.profile === agent.id);
   const soul = evolutionProfile?.soul ?? agent.soul;
@@ -256,7 +302,7 @@ function AgentPage({ agent, tasks, evolution }: { agent?: AgentInfo; tasks: Task
         </div>
         <div className="employee-status-grid">
           <div><span>连接状态</span><strong className={agent.status === 'online' ? 'status-online' : 'status-offline'}>{agent.status === 'online' ? '在线' : '离线'}</strong><small>{portListening ? '服务端口可连接' : '等待服务恢复'}</small></div>
-          <div><span>服务端口</span><strong>{agent.port ?? '未配置'}</strong><small>{agent.port ? `Profile · ${agent.id}` : '尚未登记端口'}</small></div>
+          <div><span>服务端口</span><strong>{agent.port ?? '未配置'}</strong><small>{agent.port ? `员工档案已关联 · 技术标识 ${agent.id}` : '尚未登记端口'}</small></div>
           <div><span>最近任务</span><strong>{latestTaskMeta?.label ?? '待记录'}</strong><small>{latestTask?.title ?? '暂无该员工任务'}</small></div>
         </div>
       </div>
@@ -276,8 +322,8 @@ function AgentPage({ agent, tasks, evolution }: { agent?: AgentInfo; tasks: Task
                   <div className={`task-check ${task.status}`}><OfficeIcon name={taskMeta.icon} size={15} /></div>
                   <div>
                     <div><strong>{task.title}</strong><span className={`task-status ${task.status}`}>{taskMeta.label}</span></div>
-                    <p>{task.detail || task.fallback_reason || '任务详情待补充'}</p>
-                    <small>{taskSourceLabels[task.source] ?? task.source} · {formatTime(task.time)}</small>
+                    <p>{formatTaskDetail(task, '任务详情待补充')}</p>
+                    <small>{taskSourceLabels[task.source] ?? task.source} · {formatTime(task.time)}{formatTaskTechnicalMeta(task) ? ` · ${formatTaskTechnicalMeta(task)}` : ''}</small>
                   </div>
                 </div>
               );
@@ -480,7 +526,7 @@ const taskStatusMeta: Record<TaskStatus, { label: string; icon: OfficeIconName }
   event: { label: '事件', icon: 'activity' },
 };
 
-const taskSourceLabels: Record<string, string> = { cron: 'Cron', outbox: 'Outbox', sent: 'Sent', gateway: 'Gateway' };
+const taskSourceLabels: Record<string, string> = { cron: '定时任务', outbox: '兜底队列', sent: '已送达', gateway: '网关事件' };
 
 function ActivityPage({ tasks, outbox, onRetryOutbox, retryStatus, retrying, autoRetryEnabled, autoRetryReport, onToggleAutoRetry }: { tasks: TaskItem[]; outbox: OutboxData; onRetryOutbox: () => void; retryStatus: string; retrying: boolean; autoRetryEnabled: boolean; autoRetryReport: AutoRetryReport; onToggleAutoRetry: () => void }) {
   const [filter, setFilter] = useState<TaskFilter>('all');
@@ -543,12 +589,19 @@ function ActivityPage({ tasks, outbox, onRetryOutbox, retryStatus, retrying, aut
             <div className="outbox-auto-result success"><OfficeIcon name="check" size={14} /><span>最近一次成功 {autoRetryReport.delivered} 条，剩余 {autoRetryReport.remaining} 条</span></div>
           ) : null}
           {autoRetryReport.error ? (
-            <div className="outbox-auto-result error"><OfficeIcon name="alert" size={14} /><span>{autoRetryReport.error}</span></div>
+            <div className="outbox-auto-result error">
+              <OfficeIcon name="alert" size={14} />
+              <div><span>补投失败：{formatIssueReason(autoRetryReport.error)}</span>{isIssueCode(autoRetryReport.error) ? <small>{formatTechnicalMeta([`原始原因 ${autoRetryReport.error}`])}</small> : null}</div>
+            </div>
           ) : null}
         </div>
         {outbox.items.length > 0 && <div className="outbox-preview">
           {outbox.items.slice(-3).reverse().map((item) => (
-            <div key={item.id}><strong>{item.agent_id}</strong><span>{item.message_preview}</span><small>{item.fallback_reason ?? '等待投递'}</small></div>
+            <div key={item.id}>
+              <strong>{formatAgentName(item.agent_id)}</strong>
+              <span>{item.message_preview}</span>
+              <small>{item.fallback_reason ? formatIssueReason(item.fallback_reason) : '等待投递'} · {formatTechnicalMeta([`员工标识 ${item.agent_id}`, item.fallback_reason ? `原始原因 ${item.fallback_reason}` : null])}</small>
+            </div>
           ))}
         </div>}
       </div>
@@ -565,8 +618,8 @@ function ActivityPage({ tasks, outbox, onRetryOutbox, retryStatus, retrying, aut
             <div className={`task-check ${task.status}`}><OfficeIcon name={meta.icon} size={16} /></div>
             <div className="task-card-content">
               <div><strong>{task.title}</strong><span className={`task-status ${task.status}`}>{meta.label}</span></div>
-              <p>{task.detail || task.fallback_reason || '暂无任务详情'}</p>
-              <small>{taskSourceLabels[task.source] ?? task.source}{task.agent_id ? ` · ${task.agent_id}` : ''} · {formatTime(task.time)}{task.fallback_reason ? ` · ${task.fallback_reason}` : ''}</small>
+              <p>{formatTaskDetail(task, '暂无任务详情')}</p>
+              <small>{taskSourceLabels[task.source] ?? task.source}{task.agent_id ? ` · ${formatAgentName(task.agent_id)}` : ''} · {formatTime(task.time)}{formatTaskTechnicalMeta(task) ? ` · ${formatTaskTechnicalMeta(task)}` : ''}</small>
             </div>
             <OfficeIcon name="chevron" size={17} className="task-chevron" />
           </div>;
@@ -634,15 +687,19 @@ export default function App() {
     if (mode === 'auto') setAutoRetryReport((current) => ({ ...current, completed: false, lastAttemptAt: attemptedAt, error: '' }));
     try {
       const result = await retryOutbox(1);
-      if (mode === 'manual') setRetryStatus(`已尝试 ${result.attempted} 条，成功 ${result.delivered} 条，剩余 ${result.remaining} 条`);
+      const failure = result.failures?.[0]?.fallback_reason;
+      if (mode === 'manual') {
+        const summary = `已尝试 ${result.attempted} 条，成功 ${result.delivered} 条，剩余 ${result.remaining} 条`;
+        const failureCopy = failure ? ` · ${formatIssueReason(failure)} · ${formatTechnicalMeta([`原始原因 ${failure}`])}` : '';
+        setRetryStatus(`${summary}${failureCopy}`);
+      }
       if (mode === 'auto') {
-        const failure = result.failures?.[0]?.fallback_reason;
         setAutoRetryReport({
           completed: result.remaining === 0,
           lastAttemptAt: attemptedAt,
           delivered: result.delivered,
           remaining: result.remaining,
-          error: failure ? `补投失败：${failure}` : '',
+          error: failure ?? '',
         });
         if (result.remaining === 0) setAutoRetryEnabled(false);
       }
@@ -651,8 +708,8 @@ export default function App() {
       setTasks(refreshedTasks.data.items ?? []);
     } catch (error) {
       const message = error instanceof Error ? error.message : '重试失败';
-      if (mode === 'manual') setRetryStatus(message);
-      else setAutoRetryReport((current) => ({ ...current, lastAttemptAt: attemptedAt, error: `补投失败：${message}` }));
+      if (mode === 'manual') setRetryStatus(`${formatIssueReason(message)}${isIssueCode(message) ? ` · ${formatTechnicalMeta([`原始原因 ${message}`])}` : ''}`);
+      else setAutoRetryReport((current) => ({ ...current, lastAttemptAt: attemptedAt, error: message }));
     } finally {
       retryingRef.current = false;
       setRetrying(false);

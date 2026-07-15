@@ -24,6 +24,7 @@ MVP v1：Hermes Office Mobile 已跑通本地最小闭环。
 - 主 UI 移除 emoji 与非统一图标，保留四个 Tab、派活和 outbox 重试数据链路。
 - 使用 Dragon Image2 生成并接入小黑、小橙、小金三位员工头像，替换临时 SVG 占位图。
 - 补全 Agent 员工档案：增加角色能力标签、在线/离线与端口状态、最近任务状态摘要、按员工匹配的最近 5 条任务，并将 SOUL.md / AGENT.md 产品化为“人格档案 / 执行手册”。
+- 完成任务页与员工页技术术语降级：成员标识展示为小黑/小橙/小金，任务来源改为中文产品标签，fallback/error code 转换为中文业务文案，原始标识与原因仅保留在 small/meta 技术信息中。
 - 补完整移动端 PWA 安装体验：新增 Marvis 浅米灰/蓝调主题、192 / 512 / maskable 图标、manifest 快捷入口、Apple 移动端 meta 与首页轻量安装说明。
 - Service Worker 升级到 v2：预缓存 app shell、manifest、图标和三位员工头像，导航离线回退到应用壳；所有 `/api/` 请求保持 network-only。
 - 增加 Tailscale 手机访问说明 `http://100.99.196.3:5176/`，并优化后端离线 banner 与无缓存空状态，保留继续浏览能力。

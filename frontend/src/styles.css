@@ -300,6 +300,9 @@ textarea:focus { border-color: #8fb8df; box-shadow: 0 0 0 3px rgba(77, 143, 216,
 .outbox-auto-result.success { color: #43735a; background: #f0f7f3; border: 1px solid #d8e8de; }
 .outbox-auto-result.error { color: #9b5555; background: #fbf0f0; border: 1px solid #efd9d9; }
 .outbox-auto-result .office-icon { margin-top: 1px; }
+.outbox-auto-result > div { display: grid; gap: 2px; min-width: 0; }
+.outbox-auto-result > div span, .outbox-auto-result > div small { overflow-wrap: anywhere; }
+.outbox-auto-result > div small { color: #a16a6a; font-size: 9px; }
 .outbox-preview { display: grid; gap: 0; padding: 0 14px 8px; border-top: 1px solid var(--line); background: #fcfbf8; }
 .outbox-preview > div { display: grid; grid-template-columns: 54px minmax(0, 1fr); gap: 3px 8px; padding: 9px 0; border-bottom: 1px solid #eceae4; }
 .outbox-preview > div:last-child { border-bottom: 0; }
