@@ -89,7 +89,10 @@ function AgentPage({ agent }: { agent?: AgentInfo }) {
     try {
       const result = await sendMessage(agent.id, task);
       setMessage('');
-      setSendStatus({ type: 'sent', text: `已入队 · ${formatTime(result.stored_at)}` });
+      setSendStatus({
+        type: 'sent',
+        text: `${result.delivered ? '已发送到 Hermes' : '已入队兜底'} · ${formatTime(result.stored_at)}`,
+      });
     } catch (error) {
       setSendStatus({ type: 'error', text: error instanceof Error ? error.message : '发送失败，请稍后重试' });
     } finally {
@@ -121,7 +124,7 @@ function AgentPage({ agent }: { agent?: AgentInfo }) {
           placeholder={`给${agent.name}发一条任务`}
         />
         <button disabled={sending || !message.trim()} onClick={handleSend}>
-          {sending ? '正在入队…' : '发送任务'}
+          {sending ? '正在发送…' : '发送任务'}
         </button>
         {sendStatus && <p className={`send-status ${sendStatus.type}`} role="status">{sendStatus.text}</p>}
       </div>

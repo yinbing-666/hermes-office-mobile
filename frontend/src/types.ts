@@ -50,9 +50,13 @@ export interface EvolutionData {
 export interface MessageResponse {
   ok: boolean;
   agent_id: string;
+  delivered: boolean;
   queued: boolean;
+  channel: 'api_server' | 'outbox';
   message_preview: string;
   stored_at: string;
+  response_preview?: string;
+  fallback_reason?: string;
   error?: string;
 }
 

@@ -3,11 +3,14 @@ from __future__ import annotations
 import json
 import re
 import socket
+import urllib.error
+import urllib.request
 from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable
 
+import yaml
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -23,10 +26,26 @@ PROJECT_ROOT = Path(__file__).resolve().parent
 OUTBOX_FILE = PROJECT_ROOT / "runtime" / "outbox.jsonl"
 
 PROFILE_DEFINITIONS = (
-    {"id": "default", "name": "小黑", "port": 8642},
-    {"id": "media-ops", "name": "小橙", "port": 8644},
-    {"id": "investor", "name": "小金", "port": 8650},
+    {
+        "id": "default",
+        "name": "小黑",
+        "port": 8642,
+        "config_path": HERMES_HOME / "config.yaml",
+    },
+    {
+        "id": "media-ops",
+        "name": "小橙",
+        "port": 8650,
+        "config_path": PROFILES_HOME / "media-ops" / "config.yaml",
+    },
+    {
+        "id": "investor",
+        "name": "小金",
+        "port": 8660,
+        "config_path": PROFILES_HOME / "investor" / "config.yaml",
+    },
 )
+PROFILE_BY_ID = {str(item["id"]): item for item in PROFILE_DEFINITIONS}
 
 SECRET_ASSIGNMENT_RE = re.compile(
     r"(?i)(api[_-]?key|secret|token|password|passwd|authorization|cookie)"
@@ -100,6 +119,92 @@ def redact_text(value: str, limit: int = 500) -> str:
     if len(redacted) > limit:
         return f"{redacted[:limit]}…"
     return redacted
+
+
+def redact_secret(value: str, secret: str, limit: int = 500) -> str:
+    return redact_text(value.replace(secret, "[REDACTED]"), limit=limit)
+
+
+def read_api_server_key(config_path: Path) -> str | None:
+    try:
+        payload = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, yaml.YAMLError):
+        return None
+    if not isinstance(payload, dict):
+        return None
+    platforms = payload.get("platforms")
+    if not isinstance(platforms, dict):
+        return None
+    api_server = platforms.get("api_server")
+    if not isinstance(api_server, dict):
+        return None
+    extra = api_server.get("extra")
+    if not isinstance(extra, dict):
+        return None
+    key = extra.get("key")
+    if not isinstance(key, str) or not key.strip():
+        return None
+    return key.strip()
+
+
+def response_content(payload: Any) -> str:
+    if not isinstance(payload, dict):
+        return ""
+    choices = payload.get("choices")
+    if not isinstance(choices, list) or not choices or not isinstance(choices[0], dict):
+        return ""
+    message = choices[0].get("message")
+    if not isinstance(message, dict):
+        return ""
+    content = message.get("content")
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts = []
+        for item in content:
+            if isinstance(item, dict) and isinstance(item.get("text"), str):
+                parts.append(item["text"])
+        return "\n".join(parts)
+    return ""
+
+
+def deliver_to_api_server(port: int, key: str, message: str) -> str:
+    body = json.dumps(
+        {
+            "model": "hermes-agent",
+            "messages": [{"role": "user", "content": message}],
+            "max_tokens": 800,
+        }
+    ).encode("utf-8")
+    request = urllib.request.Request(
+        f"http://127.0.0.1:{port}/v1/chat/completions",
+        data=body,
+        headers={
+            "Accept": "application/json",
+            "Authorization": f"Bearer {key}",
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+    with urllib.request.urlopen(request, timeout=12) as response:
+        payload = json.loads(response.read().decode("utf-8"))
+    return response_content(payload)
+
+
+def write_outbox_message(
+    *, stored_at: str, agent_id: str, message: str, fallback_reason: str
+) -> None:
+    record = {
+        "stored_at": stored_at,
+        "agent_id": agent_id,
+        "message": message,
+        "queued": True,
+        "source": "hermes-office-mobile",
+        "fallback_reason": fallback_reason,
+    }
+    OUTBOX_FILE.parent.mkdir(parents=True, exist_ok=True)
+    with OUTBOX_FILE.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(record, ensure_ascii=False) + "\n")
 
 
 def read_recent_lines(path: Path, max_lines: int = 40, max_bytes: int = 128_000) -> list[str]:
@@ -335,38 +440,81 @@ def cron() -> dict[str, Any]:
 @app.post("/api/messages")
 def queue_message(payload: MessageRequest) -> Any:
     stored_at = utc_now()
-    agent_id = redact_text(payload.agent_id.strip(), limit=64)
-    message = redact_text(payload.message, limit=4000).strip()
-    preview = message[:80] + ("…" if len(message) > 80 else "")
+    agent_id = payload.agent_id.strip()
+    message = payload.message.strip()
+    safe_message = redact_text(message, limit=4000)
+    preview = safe_message[:80] + ("…" if len(safe_message) > 80 else "")
     if not agent_id or not message:
         return JSONResponse(
             status_code=422,
             content={
                 "ok": False,
+                "delivered": False,
                 "queued": False,
                 "message_preview": preview,
                 "stored_at": stored_at,
                 "error": "agent_id 和 message 不能为空",
             },
         )
-    record = {
-        "stored_at": stored_at,
-        "agent_id": agent_id,
-        "message": message,
-        "queued": True,
-        "source": "hermes-office-mobile",
-    }
+    definition = PROFILE_BY_ID.get(agent_id)
+    if definition is None:
+        return JSONResponse(
+            status_code=422,
+            content={
+                "ok": False,
+                "delivered": False,
+                "queued": False,
+                "agent_id": redact_text(agent_id, limit=64),
+                "message_preview": preview,
+                "stored_at": stored_at,
+                "error": "未知 agent_id",
+            },
+        )
+
+    port = int(definition["port"])
+    config_path = Path(definition["config_path"])
+    fallback_reason = "api_server_offline"
+    if is_port_listening(port):
+        key = read_api_server_key(config_path)
+        if key is None:
+            fallback_reason = "api_key_unavailable"
+        else:
+            try:
+                result = deliver_to_api_server(port, key, message)
+                return {
+                    "ok": True,
+                    "delivered": True,
+                    "queued": False,
+                    "channel": "api_server",
+                    "agent_id": agent_id,
+                    "message_preview": preview,
+                    "stored_at": stored_at,
+                    "response_preview": redact_secret(result, key, limit=240),
+                }
+            except (
+                OSError,
+                UnicodeError,
+                json.JSONDecodeError,
+                urllib.error.URLError,
+            ):
+                fallback_reason = "api_request_failed"
+
     try:
-        OUTBOX_FILE.parent.mkdir(parents=True, exist_ok=True)
-        with OUTBOX_FILE.open("a", encoding="utf-8") as handle:
-            handle.write(json.dumps(record, ensure_ascii=False) + "\n")
+        write_outbox_message(
+            stored_at=stored_at,
+            agent_id=agent_id,
+            message=message,
+            fallback_reason=fallback_reason,
+        )
     except OSError as exc:
         return JSONResponse(
             status_code=500,
             content={
                 "ok": False,
+                "delivered": False,
                 "agent_id": agent_id,
                 "queued": False,
+                "channel": "outbox",
                 "message_preview": preview,
                 "stored_at": stored_at,
                 "error": f"消息入队失败：{type(exc).__name__}",
@@ -374,8 +522,11 @@ def queue_message(payload: MessageRequest) -> Any:
         )
     return {
         "ok": True,
+        "delivered": False,
         "agent_id": agent_id,
         "queued": True,
+        "channel": "outbox",
         "message_preview": preview,
         "stored_at": stored_at,
+        "fallback_reason": fallback_reason,
     }

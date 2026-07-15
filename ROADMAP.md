@@ -9,7 +9,9 @@ MVP v1：Hermes Office Mobile 已跑通本地最小闭环。
 - 初始化项目骨架和约束文档。
 - 实现 FastAPI BFF：`/api/health`、`/api/agents`、`/api/activity`、`/api/evolution`、`/api/cron`。
 - 实现 Vite React PWA：办公室、Agent 详情、进化档案、任务动态四个 Tab。
-- 实现最小派活闭环：`POST /api/messages` 写入 `backend/runtime/outbox.jsonl`。
+- 实现长期可用版派活第一刀：`POST /api/messages` 优先调用对应 Hermes API Server，失败写入 `backend/runtime/outbox.jsonl`。
+- 实现三 profile 路由：`default:8642`、`media-ops:8650`、`investor:8660`，Bearer key 只从各自 config 的 `platforms.api_server.extra.key` 读取。
+- 前端发送状态区分“已发送到 Hermes”和“已入队兜底”。
 - 完成前端生产构建验证：`npm run build`。
 - 完成后端语法和 API 烟测。
 - 完成 Chrome Headless/CDP 浏览器真实验证：页面加载、Tab 切换、API 请求、派活按钮、outbox 写入。
@@ -20,12 +22,12 @@ MVP v1：Hermes Office Mobile 已跑通本地最小闭环。
 - `cd frontend && npm run build`：通过。
 - `GET /api/health`：200。
 - `GET /api/agents`：200，返回 3 个 Agent。
-- `POST /api/messages`：200，写入 outbox。
+- `POST /api/messages`：API Server 可用时直接发送；端口、key 或请求异常时返回 outbox 兜底结果。
 - 浏览器验证：`/api/agents`、`/api/activity`、`/api/evolution`、`/api/cron`、`/api/messages` 均 200，network failures 为 0。
 
 ## 下一步
 
-1. 把 outbox 消息真正转发到 Hermes API Server。
+1. 增加 outbox 重试/消费机制，恢复后自动补投。
 2. 增加移动端访问方式：Tailscale 内网优先。
 3. 优化视觉：办公室卡片更像「智能员工工位」。
 4. 增加 Agent 最近会话和最近任务摘要。

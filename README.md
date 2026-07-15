@@ -6,7 +6,7 @@
 
 - 办公室首页：展示 Agent 状态。
 - Agent 详情：展示 profile、端口、SOUL.md / AGENT.md 状态。
-- 派活入口：把任务写入 `backend/runtime/outbox.jsonl`，形成最小可验证闭环。
+- 派活入口：优先把任务发送到对应 Hermes API Server；不可用时写入 `backend/runtime/outbox.jsonl` 兜底。
 - 进化档案：展示最近 Skills 和 profile 人格文件更新时间。
 - 任务动态：展示 Cron 和 gateway 活动。
 
@@ -50,8 +50,18 @@ curl -sS -X POST http://127.0.0.1:8787/api/messages \
   -d '{"agent_id":"default","message":"测试任务"}'
 ```
 
+`POST /api/messages` 会按 profile 路由到本机 Hermes API Server：
+
+| profile | 端口 | config |
+|---|---:|---|
+| `default` | 8642 | `/home/agentuser/.hermes/config.yaml` |
+| `media-ops` | 8650 | `/home/agentuser/.hermes/profiles/media-ops/config.yaml` |
+| `investor` | 8660 | `/home/agentuser/.hermes/profiles/investor/config.yaml` |
+
+后端只读取对应 config 的 `platforms.api_server.extra.key` 用作本机 Bearer 鉴权，不在响应、outbox 或日志中返回该 key。端口离线、key 不可用或请求失败时，接口仍返回成功入队状态，并记录不含敏感信息的 `fallback_reason`。
+
 ## 当前边界
 
-- v1 不直接调用 Hermes API Server，只写项目内 outbox。
+- Hermes API Server 为首选发送通道，项目内 outbox 只作为失败兜底。
 - 不修改 Hermes core、gateway、config.yaml、.env 或密钥。
 - 不公网暴露，默认本机访问。
