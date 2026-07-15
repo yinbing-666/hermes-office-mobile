@@ -7,7 +7,7 @@
 - 办公室首页：展示在线、离线、待补投概览，以及带 Dragon Image2 头像和职责信息的员工工位卡。
 - Agent 详情：展示 profile、端口、SOUL.md / AGENT.md 状态。
 - 派活入口：优先把任务发送到对应 Hermes API Server；不可用时写入 `backend/runtime/outbox.jsonl` 兜底。
-- 进化档案：以成长概览、能力矩阵、最近进化时间线和员工档案卡展示 `evolution.skills` / `evolution.profiles` 的真实记录；缺失项明确显示暂无或待记录。
+- 进化档案：保留成长概览、能力矩阵和员工档案卡，并展示最近 7 天能力增长条形趋势、真实 Git / 档案 / Skill 里程碑，以及消息处理、知识管理、开发执行、自动化四类技能树；缺失项明确显示暂无或待记录。
 - 任务动态：采用移动任务清单布局，展示进行中、已完成、待补投统计，保留兜底队列逐条重试，并将 Cron 转为任务卡片、Gateway 活动弱化为可折叠最近事件。
 - 移动导航：保留办公室、员工、进化、任务四个 Tab，使用统一线性图标和浅蓝选中态。
 
@@ -57,6 +57,7 @@ curl -sS -X POST http://127.0.0.1:8787/api/messages \
 
 | Endpoint | 用途 |
 |---|---|
+| `GET /api/evolution` | 返回 Skill 与档案状态，并从真实修改时间和项目 Git 记录派生 `trend`、`milestones`、`skill_tree` |
 | `POST /api/messages` | 发送任务，优先 API Server，失败写入 outbox |
 | `GET /api/outbox` | 查看兜底队列最近 50 条 |
 | `POST /api/outbox/retry` | 小步重试 outbox，默认/建议一次 1 条，避免手机端长时间等待 |

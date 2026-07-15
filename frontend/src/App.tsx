@@ -187,25 +187,23 @@ function AgentPage({ agent }: { agent?: AgentInfo }) {
 function EvolutionPage({ evolution }: { evolution: EvolutionData }) {
   const recentSkills = evolution.skills?.recent ?? [];
   const profiles = evolution.profiles ?? [];
+  const trend = evolution.trend ?? [];
+  const milestones = evolution.milestones ?? [];
+  const skillTree = evolution.skill_tree ?? [];
   const skillCount = evolution.skills?.count ?? recentSkills.length;
   const readyProfiles = profiles.filter((profile) => profile.profile_available && profile.soul?.present && profile.agent?.present).length;
-  const datedRecords = [
+  const fallbackRecords = [
     ...recentSkills.map((skill) => ({
-      id: `skill-${skill.name}`,
-      title: skill.name,
-      detail: 'Skill 能力记录',
-      modifiedAt: skill.modified_at,
-      icon: 'growth' as OfficeIconName,
+      date: skill.modified_at,
     })),
     ...profiles.flatMap((profile) => [
-      { id: `${profile.profile}-soul`, title: `${profile.name} · SOUL.md`, detail: '人格文件记录', modifiedAt: profile.soul?.modified_at, icon: 'user' as OfficeIconName },
-      { id: `${profile.profile}-agent`, title: `${profile.name} · AGENT.md`, detail: '员工配置记录', modifiedAt: profile.agent?.modified_at, icon: 'file' as OfficeIconName },
+      { date: profile.soul?.modified_at },
+      { date: profile.agent?.modified_at },
     ]),
-  ].filter((record) => record.modifiedAt);
-  const recentEvolution = datedRecords
-    .sort((left, right) => new Date(right.modifiedAt ?? 0).getTime() - new Date(left.modifiedAt ?? 0).getTime())
-    .slice(0, 8);
-  const latestEvolution = recentEvolution[0]?.modifiedAt ?? null;
+  ].filter((record) => record.date);
+  const latestEvolution = milestones[0]?.date ?? fallbackRecords.sort((left, right) => new Date(right.date ?? 0).getTime() - new Date(left.date ?? 0).getTime())[0]?.date ?? null;
+  const trendMaximum = Math.max(...trend.map((item) => item.total_changes), 1);
+  const trendTotal = trend.reduce((sum, item) => sum + item.total_changes, 0);
   const capabilityGroups: Array<{ title: string; icon: OfficeIconName; keywords: string[] }> = [
     { title: '工具调用', icon: 'terminal', keywords: ['api', 'cli', 'tool', 'browser', 'search', 'shell', 'mcp'] },
     { title: '内容理解', icon: 'search', keywords: ['doc', 'pdf', 'content', 'media', 'read', 'write', 'summary', 'transcript'] },
@@ -216,6 +214,17 @@ function EvolutionPage({ evolution }: { evolution: EvolutionData }) {
     const matched = recentSkills.filter((skill) => group.keywords.some((keyword) => skill.name.toLowerCase().includes(keyword)));
     return { ...group, matched };
   });
+  const skillTreeIcons: Record<string, OfficeIconName> = {
+    messaging: 'message',
+    knowledge: 'search',
+    development: 'terminal',
+    automation: 'activity',
+  };
+  const milestoneIcons: Record<string, OfficeIconName> = {
+    commit: 'terminal',
+    profile: 'user',
+    skill: 'growth',
+  };
 
   return (
     <section className="page-section evolution-page">
@@ -243,13 +252,49 @@ function EvolutionPage({ evolution }: { evolution: EvolutionData }) {
         ))}
       </div>
 
-      <div className="archive-card">
-        <div className="card-title-row"><OfficeIcon name="clock" size={19} /><h3>最近进化时间线</h3></div>
-        {recentEvolution.length === 0 ? <p className="archive-empty">暂无进化记录。</p> : recentEvolution.map((record) => (
-          <div className="evolution-event" key={record.id}>
-            <div className="event-icon"><OfficeIcon name={record.icon} size={16} /></div>
-            <div><strong>{record.title}</strong><small>{record.detail}</small></div>
-            <time>{formatTime(record.modifiedAt)}</time>
+      <div className="section-heading"><div><p className="section-kicker">Growth Trend</p><h2>能力增长曲线</h2></div><span>最近 7 天 · {trendTotal} 次变化</span></div>
+      <div className="archive-card trend-card">
+        <div className="trend-legend">
+          <span><i className="skill" />Skill 修改</span>
+          <span><i className="profile" />档案修改</span>
+        </div>
+        {trend.length === 0 ? <p className="archive-empty">暂无趋势记录。</p> : (
+          <div className="trend-chart" aria-label="最近七天能力增长条形趋势">
+            {trend.map((item) => (
+              <div className="trend-column" key={item.date}>
+                <span>{item.total_changes}</span>
+                <div className="trend-bar">
+                  <i className="trend-skill" style={{ height: `${(item.skill_changes / trendMaximum) * 100}%` }} />
+                  <i className="trend-profile" style={{ height: `${(item.profile_changes / trendMaximum) * 100}%` }} />
+                </div>
+                <small>{item.date.slice(5)}</small>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="section-heading"><div><p className="section-kicker">Milestones</p><h2>进化里程碑</h2></div><span>{milestones.length ? `${milestones.length} 条真实记录` : '待记录'}</span></div>
+      <div className="archive-card milestone-card">
+        {milestones.length === 0 ? <p className="archive-empty">暂无里程碑记录。</p> : milestones.map((milestone, index) => (
+          <div className="milestone-event" key={`${milestone.type}-${milestone.date}-${milestone.title}`}>
+            <div className="milestone-rail"><span><OfficeIcon name={milestoneIcons[milestone.type] ?? 'file'} size={15} /></span>{index < milestones.length - 1 && <i />}</div>
+            <div><strong>{milestone.title}</strong><p>{milestone.description}</p><time>{formatTime(milestone.date)}</time></div>
+          </div>
+        ))}
+      </div>
+
+      <div className="section-heading"><div><p className="section-kicker">Skill Tree</p><h2>技能树</h2></div><span>按名称关键词归类</span></div>
+      <div className="skill-tree-grid">
+        {skillTree.map((group) => (
+          <div className="skill-tree-card" key={group.key}>
+            <div className="skill-tree-head">
+              <span><OfficeIcon name={skillTreeIcons[group.key] ?? 'growth'} size={17} /></span>
+              <div><strong>{group.title}</strong><small>{group.children.length ? `${group.children.length} 项能力` : '待记录'}</small></div>
+            </div>
+            <div className="skill-tree-children">
+              {group.children.length === 0 ? <span className="skill-tree-empty">暂无匹配 Skill</span> : group.children.map((skill) => <span key={skill.name}>{skill.name}</span>)}
+            </div>
           </div>
         ))}
       </div>

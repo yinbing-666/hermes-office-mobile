@@ -3,10 +3,11 @@ from __future__ import annotations
 import json
 import re
 import socket
+import subprocess
 import urllib.error
 import urllib.request
 from collections import Counter
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -23,6 +24,7 @@ GATEWAY_LOG = HERMES_HOME / "logs" / "gateway.log"
 CRON_JOBS = HERMES_HOME / "cron" / "jobs.json"
 SKILLS_HOME = HERMES_HOME / "skills"
 PROJECT_ROOT = Path(__file__).resolve().parent
+REPOSITORY_ROOT = PROJECT_ROOT.parent
 OUTBOX_FILE = PROJECT_ROOT / "runtime" / "outbox.jsonl"
 
 PROFILE_DEFINITIONS = (
@@ -398,6 +400,196 @@ def directory_children(path: Path) -> list[Path]:
         return []
 
 
+def evolution_trend(skill_entries: list[Path], profile_documents: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    today = datetime.now(timezone.utc).date()
+    dates = [today - timedelta(days=offset) for offset in range(6, -1, -1)]
+    skill_changes = Counter(
+        modified_at.date()
+        for item in skill_entries
+        if (modified_at := file_modified_datetime(item)) is not None
+    )
+    profile_changes: Counter[Any] = Counter()
+    for profile in profile_documents:
+        for field in ("soul", "agent"):
+            modified_at = profile.get(field, {}).get("modified_at")
+            if not isinstance(modified_at, str):
+                continue
+            try:
+                profile_changes[datetime.fromisoformat(modified_at).date()] += 1
+            except ValueError:
+                continue
+    return [
+        {
+            "date": day.isoformat(),
+            "skill_changes": skill_changes[day],
+            "profile_changes": profile_changes[day],
+            "total_changes": skill_changes[day] + profile_changes[day],
+        }
+        for day in dates
+    ]
+
+
+def file_modified_datetime(path: Path) -> datetime | None:
+    try:
+        return datetime.fromtimestamp(path.stat().st_mtime, timezone.utc)
+    except OSError:
+        return None
+
+
+def recent_git_milestones(limit: int = 6) -> list[dict[str, str]]:
+    try:
+        result = subprocess.run(
+            [
+                "git",
+                "log",
+                f"-{limit}",
+                "--date=iso-strict",
+                "--pretty=format:%h%x1f%aI%x1f%s%x1e",
+            ],
+            cwd=REPOSITORY_ROOT,
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=2,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return []
+
+    milestones = []
+    for record in result.stdout.split("\x1e"):
+        parts = record.strip().split("\x1f", 2)
+        if len(parts) != 3:
+            continue
+        commit_hash, committed_at, subject = parts
+        milestones.append(
+            {
+                "title": subject,
+                "date": committed_at,
+                "type": "commit",
+                "description": f"项目提交 {commit_hash}",
+            }
+        )
+    return milestones
+
+
+def evolution_milestones(
+    latest_skills: list[Path], profile_documents: list[dict[str, Any]]
+) -> list[dict[str, str]]:
+    milestones = recent_git_milestones()
+    for profile in profile_documents:
+        present_documents = [
+            filename
+            for filename, field in (("SOUL.md", "soul"), ("AGENT.md", "agent"))
+            if profile.get(field, {}).get("present")
+        ]
+        modified_dates = [
+            profile.get(field, {}).get("modified_at")
+            for field in ("soul", "agent")
+            if isinstance(profile.get(field, {}).get("modified_at"), str)
+        ]
+        if not present_documents or not modified_dates:
+            continue
+        milestones.append(
+            {
+                "title": f"{profile['name']} 员工档案更新",
+                "date": max(modified_dates),
+                "type": "profile",
+                "description": f"已记录{'、'.join(present_documents)}",
+            }
+        )
+    for skill in latest_skills[:3]:
+        modified_at = iso_mtime(skill)
+        if modified_at is None:
+            continue
+        milestones.append(
+            {
+                "title": f"{skill.name} 能力资料更新",
+                "date": modified_at,
+                "type": "skill",
+                "description": "Skill 目录最近修改记录",
+            }
+        )
+    return sorted(milestones, key=lambda item: item["date"], reverse=True)[:12]
+
+
+def evolution_skill_tree(skill_entries: list[Path]) -> list[dict[str, Any]]:
+    categories = (
+        (
+            "messaging",
+            "消息处理",
+            ("message", "messaging", "email", "mail", "chat", "im", "social", "feed", "feeds"),
+        ),
+        (
+            "knowledge",
+            "知识管理",
+            (
+                "knowledge",
+                "memory",
+                "note",
+                "doc",
+                "wiki",
+                "search",
+                "research",
+                "pdf",
+                "read",
+                "content",
+                "data",
+                "kb",
+            ),
+        ),
+        (
+            "development",
+            "开发执行",
+            (
+                "develop",
+                "development",
+                "code",
+                "git",
+                "github",
+                "terminal",
+                "cli",
+                "api",
+                "browser",
+                "web",
+                "frontend",
+                "devops",
+                "mlops",
+                "infrastructure",
+                "execute",
+                "mcp",
+                "skill",
+                "skills",
+                "app",
+            ),
+        ),
+        (
+            "automation",
+            "自动化",
+            (
+                "automation",
+                "workflow",
+                "task",
+                "cron",
+                "schedule",
+                "dispatch",
+                "process",
+                "project",
+                "productivity",
+            ),
+        ),
+    )
+    tree = [{"key": key, "title": title, "children": []} for key, title, _ in categories]
+    for skill in sorted(skill_entries, key=lambda item: item.name.lower()):
+        name_tokens = set(re.findall(r"[a-z0-9]+", skill.name.lower()))
+        for index, (_, _, keywords) in enumerate(categories):
+            if any(keyword in name_tokens for keyword in keywords):
+                tree[index]["children"].append(
+                    {"name": skill.name, "modified_at": iso_mtime(skill)}
+                )
+                break
+    return tree
+
+
 @app.get("/api/health")
 def health() -> dict[str, Any]:
     return {
@@ -490,6 +682,9 @@ def evolution() -> dict[str, Any]:
             ],
         },
         "profiles": profile_documents,
+        "trend": evolution_trend(skill_entries, profile_documents),
+        "milestones": evolution_milestones(latest_skills, profile_documents),
+        "skill_tree": evolution_skill_tree(skill_entries),
     }
 
 

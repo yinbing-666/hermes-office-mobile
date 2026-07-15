@@ -45,6 +45,23 @@ export interface EvolutionData {
     soul: FileMeta;
     agent: FileMeta;
   }>;
+  trend?: Array<{
+    date: string;
+    skill_changes: number;
+    profile_changes: number;
+    total_changes: number;
+  }>;
+  milestones?: Array<{
+    title: string;
+    date: string;
+    type: 'commit' | 'profile' | 'skill' | string;
+    description: string;
+  }>;
+  skill_tree?: Array<{
+    key: 'messaging' | 'knowledge' | 'development' | 'automation' | string;
+    title: string;
+    children: Array<{ name: string; modified_at: string | null }>;
+  }>;
 }
 
 export interface MessageResponse {
