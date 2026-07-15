@@ -188,11 +188,17 @@ function VirtualOfficeCard() {
         </div>
         <span><i />协作空间</span>
       </div>
-      <div className="office-room" aria-hidden="true">
-        <div className="office-world">
+      <div className="office-legend" aria-label="办公室分区图例">
+        <span><i className="kitchen" />茶水</span>
+        <span><i className="fitness" />健身</span>
+        <span><i className="workstation" />工位</span>
+      </div>
+      <div className="office-room">
+        <div className="office-world" aria-hidden="true">
           <div className="office-platform" />
-          <div className="office-zone kitchen-zone">Tea & Kitchen</div>
-          <div className="office-zone focus-zone">Focus Studio</div>
+          <div className="office-zone-surface kitchen-surface" />
+          <div className="office-zone-surface fitness-surface" />
+          <div className="office-zone-surface workstation-surface" />
           <div className="office-kitchenette">
             <div className="kitchen-cabinet cabinet-one"><span /><span /></div>
             <div className="kitchen-cabinet cabinet-two"><span /></div>
@@ -223,6 +229,14 @@ function VirtualOfficeCard() {
           <div className="office-plant plant-one"><i /><span /><span /></div>
           <div className="office-plant plant-two"><i /><span /><span /></div>
           <div className="office-plant plant-three"><i /><span /><span /></div>
+        </div>
+        <div className="office-annotations" aria-label="办公室分区与员工坐席">
+          <span className="office-callout zone-callout kitchen-callout">茶水区 / 厨房</span>
+          <span className="office-callout zone-callout fitness-callout">健身区 / 跑步机</span>
+          <span className="office-callout zone-callout workstation-callout">办公工位区</span>
+          <span className="office-callout seat-callout control-callout">主控位 · 小黑</span>
+          <span className="office-callout seat-callout content-callout">内容位 · 小橙</span>
+          <span className="office-callout seat-callout business-callout">商业位 · 小金</span>
         </div>
       </div>
     </div>
