@@ -78,6 +78,10 @@ class MessageRequest(BaseModel):
     message: str = Field(..., min_length=1, max_length=4000)
 
 
+class OutboxRetryRequest(BaseModel):
+    limit: int = Field(default=10, ge=1, le=50)
+
+
 def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -205,6 +209,63 @@ def write_outbox_message(
     OUTBOX_FILE.parent.mkdir(parents=True, exist_ok=True)
     with OUTBOX_FILE.open("a", encoding="utf-8") as handle:
         handle.write(json.dumps(record, ensure_ascii=False) + "\n")
+
+
+def read_outbox_records() -> list[dict[str, Any]]:
+    if not OUTBOX_FILE.is_file():
+        return []
+    records: list[dict[str, Any]] = []
+    try:
+        lines = OUTBOX_FILE.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return []
+    for index, line in enumerate(lines, start=1):
+        if not line.strip():
+            continue
+        try:
+            item = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(item, dict):
+            continue
+        item["id"] = index
+        records.append(item)
+    return records
+
+
+def write_outbox_records(records: list[dict[str, Any]]) -> None:
+    OUTBOX_FILE.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = OUTBOX_FILE.with_suffix(".jsonl.tmp")
+    with tmp_path.open("w", encoding="utf-8") as handle:
+        for record in records:
+            clean = {key: value for key, value in record.items() if key != "id"}
+            handle.write(json.dumps(clean, ensure_ascii=False) + "\n")
+    tmp_path.replace(OUTBOX_FILE)
+
+
+def write_sent_record(record: dict[str, Any], response_preview: str) -> None:
+    sent_file = OUTBOX_FILE.parent / "sent.jsonl"
+    sent_file.parent.mkdir(parents=True, exist_ok=True)
+    payload = {key: value for key, value in record.items() if key != "id"}
+    payload.update({
+        "delivered_at": utc_now(),
+        "delivered": True,
+        "channel": "api_server",
+        "response_preview": response_preview,
+    })
+    with sent_file.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(payload, ensure_ascii=False) + "\n")
+
+
+def compact_outbox_record(record: dict[str, Any]) -> dict[str, Any]:
+    message = redact_text(str(record.get("message") or ""), limit=4000)
+    return {
+        "id": record.get("id"),
+        "agent_id": redact_text(str(record.get("agent_id") or ""), limit=64),
+        "message_preview": message[:80] + ("…" if len(message) > 80 else ""),
+        "stored_at": safe_string(record.get("stored_at")),
+        "fallback_reason": safe_string(record.get("fallback_reason")),
+    }
 
 
 def read_recent_lines(path: Path, max_lines: int = 40, max_bytes: int = 128_000) -> list[str]:
@@ -435,6 +496,77 @@ def evolution() -> dict[str, Any]:
 @app.get("/api/cron")
 def cron() -> dict[str, Any]:
     return {"generated_at": utc_now(), **cron_summary()}
+
+
+@app.get("/api/outbox")
+def outbox() -> dict[str, Any]:
+    records = read_outbox_records()
+    recent = [compact_outbox_record(record) for record in records[-50:]]
+    return {
+        "generated_at": utc_now(),
+        "source": str(OUTBOX_FILE),
+        "count": len(records),
+        "items": recent,
+    }
+
+
+@app.post("/api/outbox/retry")
+def retry_outbox(payload: OutboxRetryRequest) -> dict[str, Any]:
+    records = read_outbox_records()
+    remaining: list[dict[str, Any]] = []
+    attempted = 0
+    delivered = 0
+    failures: list[dict[str, Any]] = []
+
+    for record in records:
+        if attempted >= payload.limit:
+            remaining.append(record)
+            continue
+        attempted += 1
+        agent_id = str(record.get("agent_id") or "").strip()
+        message = str(record.get("message") or "").strip()
+        definition = PROFILE_BY_ID.get(agent_id)
+        reason = "unknown_agent"
+        if definition is not None and message:
+            port = int(definition["port"])
+            if is_port_listening(port):
+                key = read_api_server_key(Path(definition["config_path"]))
+                if key:
+                    try:
+                        result = deliver_to_api_server(port, key, message)
+                        write_sent_record(record, redact_secret(result, key, limit=240))
+                        delivered += 1
+                        continue
+                    except (
+                        OSError,
+                        UnicodeError,
+                        json.JSONDecodeError,
+                        urllib.error.URLError,
+                    ):
+                        reason = "api_request_failed"
+                else:
+                    reason = "api_key_unavailable"
+            else:
+                reason = "api_server_offline"
+        elif not message:
+            reason = "empty_message"
+        record["fallback_reason"] = reason
+        remaining.append(record)
+        failures.append({
+            "id": record.get("id"),
+            "agent_id": redact_text(agent_id, limit=64),
+            "fallback_reason": reason,
+        })
+
+    write_outbox_records(remaining)
+    return {
+        "ok": True,
+        "attempted": attempted,
+        "delivered": delivered,
+        "remaining": len(remaining),
+        "failures": failures[:10],
+        "generated_at": utc_now(),
+    }
 
 
 @app.post("/api/messages")

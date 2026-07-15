@@ -1,4 +1,4 @@
-import type { ActivityItem, AgentInfo, ApiState, CronJob, EvolutionData, MessageResponse } from './types';
+import type { ActivityItem, AgentInfo, ApiState, CronJob, EvolutionData, MessageResponse, OutboxData, OutboxRetryResponse } from './types';
 
 const mockAgents: AgentInfo[] = [
   { id: 'default', name: '小黑', status: 'online', port: 8642, port_listening: true, profile_available: true },
@@ -47,14 +47,38 @@ export function fetchCron() {
 }
 
 export async function sendMessage(agentId: string, message: string): Promise<MessageResponse> {
-  const response = await fetch('/api/messages', {
+  try {
+    const response = await fetch('/api/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({ agent_id: agentId, message }),
+    });
+    const data = await response.json().catch(() => null) as MessageResponse | null;
+    if (!response.ok || !data || !data.ok) {
+      throw new Error(data?.error || `HTTP ${response.status}`);
+    }
+    return data;
+  } catch (error) {
+    if (import.meta.env.DEV) {
+      throw error;
+    }
+    return { ok: true, agent_id: agentId, delivered: false, queued: true, channel: 'outbox', stored_at: new Date().toISOString(), message_preview: message.slice(0, 80), fallback_reason: 'preview-offline' };
+  }
+}
+
+export function fetchOutbox() {
+  return getJson<OutboxData>('/api/outbox', { count: 0, items: [] });
+}
+
+export async function retryOutbox(limit = 10): Promise<OutboxRetryResponse> {
+  const response = await fetch('/api/outbox/retry', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-    body: JSON.stringify({ agent_id: agentId, message }),
+    body: JSON.stringify({ limit }),
   });
-  const data = await response.json().catch(() => null) as MessageResponse | null;
+  const data = await response.json().catch(() => null) as OutboxRetryResponse | null;
   if (!response.ok || !data || !data.ok) {
-    throw new Error(data?.error || `HTTP ${response.status}`);
+    throw new Error(`HTTP ${response.status}`);
   }
   return data;
 }

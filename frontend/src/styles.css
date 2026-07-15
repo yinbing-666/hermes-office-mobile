@@ -123,6 +123,8 @@ textarea { min-height: 100px; resize: vertical; border: 1px solid var(--line); b
 .job-row { display: flex; justify-content: space-between; gap: 10px; padding: 10px 0; border-top: 1px solid #f3eadf; }
 .job-row div { display: grid; gap: 3px; }
 .job-enabled, .job-disabled { align-self: start; padding: 4px 8px; border-radius: 999px; font-size: 12px; font-weight: 800; }
+.mini-button { align-self: start; padding: 8px 10px; border-radius: 12px; background: var(--accent); color: white; font-size: 12px; font-weight: 800; box-shadow: 0 6px 14px rgba(217, 119, 6, 0.16); }
+.mini-button:disabled { background: #eadfd2; color: var(--muted); box-shadow: none; }
 .job-enabled { color: var(--green); background: #dcfce7; }
 .job-disabled { color: var(--red); background: #fee2e2; }
 .log-line { padding: 10px; border-radius: 12px; background: #fffaf5; color: #5c5652; font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }

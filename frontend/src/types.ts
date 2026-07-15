@@ -60,6 +60,28 @@ export interface MessageResponse {
   error?: string;
 }
 
+export interface OutboxItem {
+  id: number | string;
+  agent_id: string;
+  message_preview: string;
+  stored_at?: string | null;
+  fallback_reason?: string | null;
+}
+
+export interface OutboxData {
+  count: number;
+  items: OutboxItem[];
+}
+
+export interface OutboxRetryResponse {
+  ok: boolean;
+  attempted: number;
+  delivered: number;
+  remaining: number;
+  generated_at: string;
+  failures?: Array<{ id?: number | string; agent_id: string; fallback_reason: string }>;
+}
+
 export interface ApiState<T> {
   data: T;
   offline: boolean;

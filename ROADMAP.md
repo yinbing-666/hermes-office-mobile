@@ -12,6 +12,8 @@ MVP v1：Hermes Office Mobile 已跑通本地最小闭环。
 - 实现长期可用版派活第一刀：`POST /api/messages` 优先调用对应 Hermes API Server，失败写入 `backend/runtime/outbox.jsonl`。
 - 实现三 profile 路由：`default:8642`、`media-ops:8650`、`investor:8660`，Bearer key 只从各自 config 的 `platforms.api_server.extra.key` 读取。
 - 前端发送状态区分“已发送到 Hermes”和“已入队兜底”。
+- 实现长期可用版第二刀：`GET /api/outbox` 展示兜底队列，`POST /api/outbox/retry` 小步重试投递，成功写入 `backend/runtime/sent.jsonl`，失败保留 outbox。
+- 任务动态页增加「兜底队列」模块和「重试 1 条」按钮，避免移动端长时间卡在批量重试。
 - 完成前端生产构建验证：`npm run build`。
 - 完成后端语法和 API 烟测。
 - 完成 Chrome Headless/CDP 浏览器真实验证：页面加载、Tab 切换、API 请求、派活按钮、outbox 写入。
@@ -23,6 +25,8 @@ MVP v1：Hermes Office Mobile 已跑通本地最小闭环。
 - `GET /api/health`：200。
 - `GET /api/agents`：200，返回 3 个 Agent。
 - `POST /api/messages`：API Server 可用时直接发送；端口、key 或请求异常时返回 outbox 兜底结果。
+- `GET /api/outbox`：200，返回兜底队列数量和最近消息。
+- `POST /api/outbox/retry`：200，可按 `limit` 小步重试，失败项继续保留。
 - 浏览器验证：`/api/agents`、`/api/activity`、`/api/evolution`、`/api/cron`、`/api/messages` 均 200，network failures 为 0。
 
 ## 下一步

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
-import { fetchActivity, fetchAgents, fetchCron, fetchEvolution, sendMessage } from './api';
-import type { ActivityItem, AgentInfo, CronJob, EvolutionData } from './types';
+import { fetchActivity, fetchAgents, fetchCron, fetchEvolution, fetchOutbox, retryOutbox, sendMessage } from './api';
+import type { ActivityItem, AgentInfo, CronJob, EvolutionData, OutboxData } from './types';
 
 type Tab = 'office' | 'agent' | 'evolution' | 'activity';
 
@@ -160,7 +160,7 @@ function EvolutionPage({ evolution }: { evolution: EvolutionData }) {
   );
 }
 
-function ActivityPage({ activity, cronJobs }: { activity: ActivityItem[]; cronJobs: CronJob[] }) {
+function ActivityPage({ activity, cronJobs, outbox, onRetryOutbox, retryStatus, retrying }: { activity: ActivityItem[]; cronJobs: CronJob[]; outbox: OutboxData; onRetryOutbox: () => void; retryStatus: string; retrying: boolean }) {
   return (
     <section className="page-section">
       <div className="section-title">任务动态</div>
@@ -170,6 +170,20 @@ function ActivityPage({ activity, cronJobs }: { activity: ActivityItem[]; cronJo
           <div className="job-row" key={job.id}>
             <div><strong>{job.name}</strong><small>{job.schedule ?? '未设置 schedule'}</small></div>
             <span className={job.enabled ? 'job-enabled' : 'job-disabled'}>{job.enabled ? 'enabled' : 'paused'}</span>
+          </div>
+        ))}
+      </div>
+      <div className="timeline-card">
+        <h2>兜底队列</h2>
+        <div className="job-row">
+          <div><strong>{outbox.count} 条待补投</strong><small>{retryStatus || '端口恢复后可手动重试投递'}</small></div>
+          <button className="mini-button" onClick={onRetryOutbox} disabled={retrying || outbox.count === 0}>
+            {retrying ? '重试中…' : '重试 1 条'}
+          </button>
+        </div>
+        {outbox.items.slice(-5).reverse().map((item) => (
+          <div className="log-line" key={item.id}>
+            {item.agent_id} · {item.message_preview} · {item.fallback_reason ?? 'queued'}
           </div>
         ))}
       </div>
@@ -190,20 +204,40 @@ export default function App() {
   const [activity, setActivity] = useState<ActivityItem[]>([]);
   const [evolution, setEvolution] = useState<EvolutionData>({});
   const [cronJobs, setCronJobs] = useState<CronJob[]>([]);
+  const [outbox, setOutbox] = useState<OutboxData>({ count: 0, items: [] });
+  const [retrying, setRetrying] = useState(false);
+  const [retryStatus, setRetryStatus] = useState('');
   const [offline, setOffline] = useState(false);
 
   useEffect(() => {
-    Promise.all([fetchAgents(), fetchActivity(), fetchEvolution(), fetchCron()]).then(([agentRes, activityRes, evolutionRes, cronRes]) => {
+    Promise.all([fetchAgents(), fetchActivity(), fetchEvolution(), fetchCron(), fetchOutbox()]).then(([agentRes, activityRes, evolutionRes, cronRes, outboxRes]) => {
       setAgents(agentRes.data.agents);
       setSelectedId(agentRes.data.agents[0]?.id ?? 'default');
       setActivity(activityRes.data.items ?? activityRes.data.events ?? []);
       setEvolution(evolutionRes.data);
       setCronJobs(cronRes.data.jobs ?? []);
-      setOffline(agentRes.offline || activityRes.offline || evolutionRes.offline || cronRes.offline);
+      setOutbox(outboxRes.data);
+      setOffline(agentRes.offline || activityRes.offline || evolutionRes.offline || cronRes.offline || outboxRes.offline);
     });
   }, []);
 
   const selectedAgent = useMemo(() => agents.find((agent) => agent.id === selectedId) ?? agents[0], [agents, selectedId]);
+
+  async function handleRetryOutbox() {
+    if (retrying || outbox.count === 0) return;
+    setRetrying(true);
+    setRetryStatus('');
+    try {
+      const result = await retryOutbox(1);
+      setRetryStatus(`已尝试 ${result.attempted} 条，成功 ${result.delivered} 条，剩余 ${result.remaining} 条`);
+      const refreshed = await fetchOutbox();
+      setOutbox(refreshed.data);
+    } catch (error) {
+      setRetryStatus(error instanceof Error ? error.message : '重试失败');
+    } finally {
+      setRetrying(false);
+    }
+  }
 
   return (
     <main className="app-shell">
@@ -215,7 +249,7 @@ export default function App() {
       {tab === 'office' && <OfficePage agents={agents} selectedId={selectedId} setSelectedId={setSelectedId} />}
       {tab === 'agent' && <AgentPage agent={selectedAgent} />}
       {tab === 'evolution' && <EvolutionPage evolution={evolution} />}
-      {tab === 'activity' && <ActivityPage activity={activity} cronJobs={cronJobs} />}
+      {tab === 'activity' && <ActivityPage activity={activity} cronJobs={cronJobs} outbox={outbox} onRetryOutbox={handleRetryOutbox} retryStatus={retryStatus} retrying={retrying} />}
       <nav className="tabbar" aria-label="主导航">
         {[
           ['office', '办公室', '🏢'],

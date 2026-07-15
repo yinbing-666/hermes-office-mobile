@@ -45,10 +45,20 @@ API 烟测：
 ```bash
 curl -sS http://127.0.0.1:8787/api/health
 curl -sS http://127.0.0.1:8787/api/agents
+curl -sS http://127.0.0.1:8787/api/outbox
+curl -sS -X POST http://127.0.0.1:8787/api/outbox/retry \
+  -H 'Content-Type: application/json' \
+  -d '{"limit":1}'
 curl -sS -X POST http://127.0.0.1:8787/api/messages \
   -H 'Content-Type: application/json' \
   -d '{"agent_id":"default","message":"测试任务"}'
 ```
+
+| Endpoint | 用途 |
+|---|---|
+| `POST /api/messages` | 发送任务，优先 API Server，失败写入 outbox |
+| `GET /api/outbox` | 查看兜底队列最近 50 条 |
+| `POST /api/outbox/retry` | 小步重试 outbox，默认/建议一次 1 条，避免手机端长时间等待 |
 
 `POST /api/messages` 会按 profile 路由到本机 Hermes API Server：
 
