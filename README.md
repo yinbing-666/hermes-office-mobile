@@ -9,9 +9,10 @@
 - 员工详情：补全员工档案，展示在线/离线与端口、能力标签、按员工匹配的最近 5 条任务，以及产品化的“人格档案 / 执行手册”状态和最近更新时间；无任务或档案时明确显示待记录。
 - 派活入口：优先把任务发送到对应 Hermes API Server；不可用时写入 `backend/runtime/outbox.jsonl` 兜底。
 - 专家团执行 MVP：任务页统计区下方默认召集小黑、小橙、小金三位专家，把同一用户问题分别附加主控汇总、内容传播、商业风险角色上下文后并发调用现有 `POST /api/messages`。前端只展示“已发送到 Hermes / 已入队兜底 / 失败”三类投递结果，不读取、拼接或伪造专家回答；真实回答由 Hermes 通道或兜底队列继续承接，投递完成后刷新 outbox 与统一任务历史。
-- 工作空间 MVP：新增“空间”Tab，使用 `localStorage` 保存工作空间列表并内置一个示例空间；可填写空间名称、项目目标并选择小黑/小橙/小金作为成员。旧版空间数据会自动补齐 `logs: []`。空间任务摘要优先从现有真实 `tasks` 的 `title/detail/source/technical_message/fallback_reason` 等字段中安全匹配完整空间名称，展示最近 5 条名称命中任务，不生成空间任务占位数据；原先按成员过滤的最近 5 条任务保留为独立“成员最近任务辅助区”，并明确标注“按成员粗略关联”。
+- 工作空间 MVP：新增“空间”Tab，使用 `localStorage` 保存工作空间列表并内置一个示例空间；可填写空间名称、项目目标并选择小黑/小橙/小金作为成员。旧版空间数据与旧日志继续兼容。空间任务按完整空间名称匹配，并固定按 sent 已送达、outbox 待补投、普通任务排序；成员最近任务继续保留为独立辅助区。
 - 空间派活：可从当前空间成员中选择一位员工并输入具体任务，复用现有 `sendMessage`；消息包含空间名称、项目目标、目标成员角色视角和任务内容，发送后刷新 outbox 与统一任务历史。
-- 空间内专家团、状态条与日志：专家团仅向当前空间成员投递包含空间上下文的问题。单人派活和专家团投递都会按目标成员写入空间本地日志，记录时间、类型、目标成员、投递状态和标题摘要；每个空间最多保留最近 20 条。空间状态条展示成员数、日志数、名称命中的真实任务数，以及由名称命中的待补投任务和未被真实任务覆盖的排队日志去重派生的待补投数。日志只表示已发起，不代表执行完成。
+- 空间结果与专家团回执：`GET /api/workspaces/activity` 从 `sent.jsonl`、`outbox.jsonl` 和统一任务中按完整空间名称返回脱敏真实记录。空间结果区展示真实消息、投递状态和 `response_preview`；专家团同批投递写入本地 `batchId`，回执区按成员展示真实回执预览。页面明确使用“回执预览”，不生成专家结论或伪造总结。
+- 通道健康：首页展示 `default:8642`、`media-ops:8650`、`investor:8660`、`BFF:8787` 的在线状态、端口和 `timeout=45s`；profile 离线时提示“需要启动 profile gateway”。
 - 进化档案：保留成长概览、能力矩阵和员工档案卡，并展示最近 7 天能力增长条形趋势、真实 Git / 档案 / Skill 里程碑，以及消息处理、知识管理、开发执行、自动化四类技能树；每类默认展示前 6 个 Skill，可在当前页面内展开更多或收起，缺失项明确显示暂无或待记录。
 - 任务动态：通过 `GET /api/tasks` 聚合 Cron、outbox、sent 与 Gateway activity，统一展示进行中、已完成、待补投、失败/暂停和事件状态；任务卡支持点击打开移动端详情面板，展示标题、状态、来源、员工、时间、现有任务详情、业务化失败原因、技术信息和任务 ID。待补投、失败、暂停或 outbox 来源任务可从详情面板复用兜底队列“逐条重试”，页面不推断或伪造任务结果。成员标识转换为小黑/小橙/小金，来源产品化为定时任务/兜底队列/已送达/网关事件，原始标识与原因仅保留在技术信息中。
 - 移动导航：提供办公室、空间、员工、进化、任务五个 Tab，使用统一线性图标、浅蓝选中态和窄屏安全布局。
@@ -19,6 +20,8 @@
 - 离线浏览：Service Worker 缓存 app shell、manifest、图标和员工头像；API 始终 network-only，后端不可用时前端明确展示离线缓存或模拟数据并允许继续浏览。
 
 ## 启动
+
+开发态启动顺序：先按现有 Hermes 运维方式启动三个 profile gateway，并确认 `8642`、`8650`、`8660` 监听；再启动 BFF `8787`；最后启动 Vite。项目不会修改 Hermes 配置、密钥或 gateway，也不提供生产守护。
 
 后端：
 
@@ -62,6 +65,8 @@ API 烟测：
 curl -sS http://127.0.0.1:8787/api/health
 curl -sS http://127.0.0.1:8787/api/agents
 curl -sS http://127.0.0.1:8787/api/tasks
+curl -sS --get http://127.0.0.1:8787/api/workspaces/activity \
+  --data-urlencode 'workspace_name=Hermes 移动工作空间'
 curl -sS http://127.0.0.1:8787/api/outbox
 curl -sS -X POST http://127.0.0.1:8787/api/outbox/retry \
   -H 'Content-Type: application/json' \
@@ -75,6 +80,8 @@ curl -sS -X POST http://127.0.0.1:8787/api/messages \
 |---|---|
 | `GET /api/evolution` | 返回 Skill 与档案状态，并从真实修改时间和项目 Git 记录派生 `trend`、`milestones`、`skill_tree` |
 | `GET /api/tasks` | 聚合 Cron、`outbox.jsonl`、`sent.jsonl` 和 Gateway activity，状态统一为 `running/completed/queued/failed/paused/event` |
+| `GET /api/workspaces/activity` | 按完整空间名称读取脱敏的 sent、outbox 与统一任务记录，并保留真实 `response_preview` |
+| `GET /api/health` | 返回四条本地通道的在线状态、端口、45 秒超时配置和离线恢复提示 |
 | `POST /api/messages` | 发送任务，优先 API Server；成功写入 sent 历史，失败写入 outbox。BFF 调用 Hermes API Server 的超时为 45 秒，避免慢响应被误判为失败 |
 | `GET /api/outbox` | 查看兜底队列最近 50 条 |
 | `POST /api/outbox/retry` | 小步重试 outbox，默认/建议一次 1 条，避免手机端长时间等待 |
@@ -98,7 +105,7 @@ curl -sS -X POST http://127.0.0.1:8787/api/messages \
 ## 当前边界
 
 - Hermes API Server 为首选发送通道，项目内 outbox 只作为失败兜底。
-- 专家团当前是执行层 MVP，只负责三位固定专家的投递与状态确认；真实专家回答仍由 Hermes 会话或兜底队列承接，前端不提供回答聚合与伪造展示。
+- 专家团当前只聚合真实投递回执预览，不读取完整会话、不生成最终综合结论。
 - 自动补投仅在用户主动开启后的当前浏览器任务页会话内运行，默认关闭，不后台常驻。
 - 不修改 Hermes core、gateway、config.yaml、.env 或密钥。
 - 不公网暴露，默认本机访问。

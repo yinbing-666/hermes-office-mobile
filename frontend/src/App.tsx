@@ -13,9 +13,12 @@ type RoleMeta = { role: string; focus: string; tone: string; avatar: string; tag
 type AutoRetryReport = { completed: boolean; lastAttemptAt: string | null; delivered: number | null; remaining: number | null; error: string };
 type ExpertAgentId = 'default' | 'media-ops' | 'investor';
 type ExpertDeliveryStatus = 'delivered' | 'queued' | 'failed';
-type ExpertDeliveryResult = { agentId: ExpertAgentId; status: ExpertDeliveryStatus; error?: string };
-type WorkspaceLog = { id: string; createdAt: string; type: 'dispatch' | 'expert'; targetAgentId: ExpertAgentId; status: ExpertDeliveryStatus; title: string };
+type ExpertDeliveryResult = { agentId: ExpertAgentId; status: ExpertDeliveryStatus; error?: string; responsePreview?: string };
+type WorkspaceLog = { id: string; createdAt: string; type: 'dispatch' | 'expert'; targetAgentId: ExpertAgentId; status: ExpertDeliveryStatus; title: string; batchId?: string; responsePreview?: string };
 type Workspace = { id: string; name: string; goal: string; memberIds: ExpertAgentId[]; createdAt: string; logs: WorkspaceLog[] };
+type WorkspaceActivityRecord = { id: string; source: 'sent' | 'outbox'; agent_id?: string | null; status: 'delivered' | 'queued'; time?: string | null; message_preview: string; response_preview?: string | null; fallback_reason?: string | null };
+type WorkspaceActivityData = { sent: WorkspaceActivityRecord[]; outbox: WorkspaceActivityRecord[]; tasks: TaskItem[] };
+type ChannelHealth = { id: string; name: string; port: number; online: boolean; timeout_seconds: number; last_error_reason?: string | null; recovery_hint?: string | null };
 
 const fallbackRole: RoleMeta = { role: 'Hermes 智能员工', focus: '自定义智能员工', tone: 'blue', avatar: '', tags: ['任务执行', '协作响应'] };
 
@@ -179,6 +182,33 @@ function sortTasksByRecent(tasks: TaskItem[]) {
       return (Number.isNaN(rightTime) ? 0 : rightTime) - (Number.isNaN(leftTime) ? 0 : leftTime) || left.index - right.index;
     })
     .map(({ task }) => task);
+}
+
+function sortWorkspaceTasks(tasks: TaskItem[]) {
+  const sourcePriority = (task: TaskItem) => task.source === 'sent' ? 0 : task.source === 'outbox' ? 1 : 2;
+  return tasks
+    .map((task, index) => ({ task, index }))
+    .sort((left, right) => {
+      const priorityDifference = sourcePriority(left.task) - sourcePriority(right.task);
+      if (priorityDifference) return priorityDifference;
+      const leftTime = left.task.time ? new Date(left.task.time).getTime() : 0;
+      const rightTime = right.task.time ? new Date(right.task.time).getTime() : 0;
+      return (Number.isNaN(rightTime) ? 0 : rightTime) - (Number.isNaN(leftTime) ? 0 : leftTime) || left.index - right.index;
+    })
+    .map(({ task }) => task);
+}
+
+async function fetchWorkspaceActivity(workspaceName: string): Promise<WorkspaceActivityData> {
+  const response = await fetch(`/api/workspaces/activity?workspace_name=${encodeURIComponent(workspaceName)}`, { headers: { Accept: 'application/json' } });
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  return response.json() as Promise<WorkspaceActivityData>;
+}
+
+async function fetchChannelHealth(): Promise<ChannelHealth[]> {
+  const response = await fetch('/api/health', { headers: { Accept: 'application/json' } });
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  const data = await response.json() as { channels?: ChannelHealth[] };
+  return data.channels ?? [];
 }
 
 function StatusPill({ status }: { status: string }) {
@@ -370,7 +400,31 @@ function ResourceTaskOverview({ tasks }: { tasks: TaskItem[] }) {
   );
 }
 
-function OfficePage({ agents, tasks, selectedId, setSelectedId, onSelectAgent, pending, backendOffline, installPrompt, installed, onInstall }: { agents: AgentInfo[]; tasks: TaskItem[]; selectedId: string; setSelectedId: (id: string) => void; onSelectAgent: (agentId: string) => void; pending: number; backendOffline: boolean; installPrompt: BeforeInstallPromptEvent | null; installed: boolean; onInstall: () => void }) {
+function ChannelHealthCard({ channels }: { channels: ChannelHealth[] }) {
+  const expectedChannels: ChannelHealth[] = channels.length > 0 ? channels : [
+    { id: 'default', name: 'default', port: 8642, online: false, timeout_seconds: 45, recovery_hint: '需要启动 profile gateway' },
+    { id: 'media-ops', name: 'media-ops', port: 8650, online: false, timeout_seconds: 45, recovery_hint: '需要启动 profile gateway' },
+    { id: 'investor', name: 'investor', port: 8660, online: false, timeout_seconds: 45, recovery_hint: '需要启动 profile gateway' },
+    { id: 'bff', name: 'BFF', port: 8787, online: false, timeout_seconds: 45 },
+  ];
+  return (
+    <div className="channel-health-card">
+      <div className="section-heading"><div><p className="section-kicker">Channel Health</p><h2>通道健康</h2></div><span>timeout=45s</span></div>
+      <div className="channel-health-grid">
+        {expectedChannels.map((channel) => (
+          <div className={channel.online ? 'online' : 'offline'} key={channel.id}>
+            <span className="channel-health-dot" />
+            <div><strong>{channel.id === 'bff' ? 'BFF' : channel.id}</strong><small>端口 {channel.port}</small></div>
+            <em>{channel.online ? '在线' : '离线'}</em>
+            {!channel.online ? <p>{channel.id === 'bff' ? '需要启动 BFF' : channel.recovery_hint || '需要启动 profile gateway'}</p> : null}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function OfficePage({ agents, tasks, channels, selectedId, setSelectedId, onSelectAgent, pending, backendOffline, installPrompt, installed, onInstall }: { agents: AgentInfo[]; tasks: TaskItem[]; channels: ChannelHealth[]; selectedId: string; setSelectedId: (id: string) => void; onSelectAgent: (agentId: string) => void; pending: number; backendOffline: boolean; installPrompt: BeforeInstallPromptEvent | null; installed: boolean; onInstall: () => void }) {
   const online = agents.filter((agent) => agent.status === 'online').length;
   const offline = Math.max(agents.length - online, 0);
   return (
@@ -392,6 +446,7 @@ function OfficePage({ agents, tasks, selectedId, setSelectedId, onSelectAgent, p
       </div>
       <VirtualOfficeCard onSelectAgent={onSelectAgent} />
       <ResourceTaskOverview tasks={tasks} />
+      <ChannelHealthCard channels={channels} />
       <MobileAccessCard installPrompt={installPrompt} installed={installed} onInstall={onInstall} />
       <div className="section-heading">
         <div>
@@ -741,7 +796,7 @@ const taskStatusMeta: Record<TaskStatus, { label: string; icon: OfficeIconName }
 
 const taskSourceLabels: Record<string, string> = { cron: '定时任务', outbox: '兜底队列', sent: '已送达', gateway: '网关事件' };
 
-function WorkspacePage({ tasks, onDispatch, onExpertSubmit }: { tasks: TaskItem[]; onDispatch: (agentId: ExpertAgentId, workspaceName: string, goal: string, task: string) => Promise<ExpertDeliveryResult>; onExpertSubmit: (memberIds: ExpertAgentId[], workspaceName: string, goal: string, question: string) => Promise<ExpertDeliveryResult[]> }) {
+function WorkspacePage({ tasks, onDispatch, onExpertSubmit }: { tasks: TaskItem[]; onDispatch: (agentId: ExpertAgentId, workspaceName: string, goal: string, task: string) => Promise<ExpertDeliveryResult>; onExpertSubmit: (memberIds: ExpertAgentId[], workspaceName: string, goal: string, question: string, batchId: string) => Promise<ExpertDeliveryResult[]> }) {
   const [workspaces, setWorkspaces] = useState<Workspace[]>(loadWorkspaces);
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState(() => loadWorkspaces()[0]?.id ?? '');
   const [creating, setCreating] = useState(false);
@@ -755,11 +810,17 @@ function WorkspacePage({ tasks, onDispatch, onExpertSubmit }: { tasks: TaskItem[
   const [dispatchTask, setDispatchTask] = useState('');
   const [dispatching, setDispatching] = useState(false);
   const [dispatchResult, setDispatchResult] = useState<ExpertDeliveryResult | null>(null);
+  const [workspaceActivity, setWorkspaceActivity] = useState<WorkspaceActivityData>({ sent: [], outbox: [], tasks: [] });
+  const [activityLoading, setActivityLoading] = useState(false);
+  const [activityRefresh, setActivityRefresh] = useState(0);
   const selectedWorkspace = workspaces.find((workspace) => workspace.id === selectedWorkspaceId) ?? workspaces[0];
   const workspaceTasks = useMemo(() => {
     if (!selectedWorkspace) return [];
-    return sortTasksByRecent(tasks.filter((task) => taskContainsText(task, selectedWorkspace.name)));
-  }, [selectedWorkspace, tasks]);
+    const matchedTasks = workspaceActivity.tasks.length > 0
+      ? workspaceActivity.tasks
+      : tasks.filter((task) => taskContainsText(task, selectedWorkspace.name));
+    return sortWorkspaceTasks(matchedTasks);
+  }, [selectedWorkspace, tasks, workspaceActivity.tasks]);
   const recentWorkspaceTasks = workspaceTasks.slice(0, 5);
   const recentMemberTasks = useMemo(() => {
     if (!selectedWorkspace) return [];
@@ -772,6 +833,16 @@ function WorkspacePage({ tasks, onDispatch, onExpertSubmit }: { tasks: TaskItem[
     log.status === 'queued' && !workspaceQueuedTasks.some((task) => taskContainsText(task, log.title))
   )) ?? [];
   const workspacePendingCount = workspaceQueuedTasks.length + unmatchedQueuedLogs.length;
+  const workspaceResults = useMemo(() => [...workspaceActivity.sent, ...workspaceActivity.outbox].slice(0, 8), [workspaceActivity]);
+  const latestExpertBatch = useMemo(() => {
+    if (!selectedWorkspace) return [];
+    const expertLogs = selectedWorkspace.logs.filter((log) => log.type === 'expert');
+    if (expertLogs.length === 0) return [];
+    const latestBatchId = expertLogs[0].batchId;
+    if (latestBatchId) return expertLogs.filter((log) => log.batchId === latestBatchId);
+    const latestCreatedAt = expertLogs[0].createdAt;
+    return expertLogs.filter((log) => !log.batchId && log.createdAt === latestCreatedAt);
+  }, [selectedWorkspace]);
 
   useEffect(() => {
     window.localStorage.setItem(workspaceStorageKey, JSON.stringify(workspaces));
@@ -783,6 +854,17 @@ function WorkspacePage({ tasks, onDispatch, onExpertSubmit }: { tasks: TaskItem[
     setDispatchTask('');
     setDispatchResult(null);
   }, [selectedWorkspaceId]);
+
+  useEffect(() => {
+    if (!selectedWorkspace) return;
+    let active = true;
+    setActivityLoading(true);
+    fetchWorkspaceActivity(selectedWorkspace.name)
+      .then((data) => { if (active) setWorkspaceActivity(data); })
+      .catch(() => { if (active) setWorkspaceActivity({ sent: [], outbox: [], tasks: [] }); })
+      .finally(() => { if (active) setActivityLoading(false); });
+    return () => { active = false; };
+  }, [selectedWorkspace, activityRefresh]);
 
   useEffect(() => {
     if (!selectedWorkspace) return;
@@ -838,7 +920,9 @@ function WorkspacePage({ tasks, onDispatch, onExpertSubmit }: { tasks: TaskItem[
         targetAgentId: dispatchAgentId,
         status: result.status,
         title: task,
+        responsePreview: result.responsePreview,
       }]);
+      setActivityRefresh((current) => current + 1);
       setDispatchTask('');
     } finally {
       setDispatching(false);
@@ -851,7 +935,8 @@ function WorkspacePage({ tasks, onDispatch, onExpertSubmit }: { tasks: TaskItem[
     setSubmitting(true);
     setDeliveryResults([]);
     try {
-      const results = await onExpertSubmit(selectedWorkspace.memberIds, selectedWorkspace.name, selectedWorkspace.goal, trimmedQuestion);
+      const batchId = `expert-batch-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      const results = await onExpertSubmit(selectedWorkspace.memberIds, selectedWorkspace.name, selectedWorkspace.goal, trimmedQuestion, batchId);
       setDeliveryResults(results);
       const createdAt = new Date().toISOString();
       appendLogs(selectedWorkspace.id, results.map((result, index) => ({
@@ -861,7 +946,10 @@ function WorkspacePage({ tasks, onDispatch, onExpertSubmit }: { tasks: TaskItem[
         targetAgentId: result.agentId,
         status: result.status,
         title: trimmedQuestion,
+        batchId,
+        responsePreview: result.responsePreview,
       })));
+      setActivityRefresh((current) => current + 1);
       setQuestion('');
     } finally {
       setSubmitting(false);
@@ -969,6 +1057,25 @@ function WorkspacePage({ tasks, onDispatch, onExpertSubmit }: { tasks: TaskItem[
             ) : <div className="workspace-empty"><OfficeIcon name="activity" size={18} /><span>真实任务中暂未找到包含“{selectedWorkspace.name}”的记录</span></div>}
           </div>
 
+          <div className="workspace-result-card">
+            <div className="workspace-section-heading"><div><span>Workspace Results</span><h3>空间结果</h3></div><small>{activityLoading ? '正在读取真实记录' : `${workspaceResults.length} 条真实回流`}</small></div>
+            {workspaceResults.length > 0 ? (
+              <div className="workspace-result-list">
+                {workspaceResults.map((record) => (
+                  <div key={record.id}>
+                    <div className="workspace-result-head">
+                      <span className={`workspace-log-icon ${record.status === 'queued' ? 'queued' : ''}`}><OfficeIcon name={record.status === 'delivered' ? 'check' : 'database'} size={14} /></span>
+                      <div><strong>{formatAgentName(record.agent_id)}</strong><small>{record.source === 'sent' ? 'sent.jsonl · 已送达' : 'outbox.jsonl · 待补投'} · {formatTime(record.time)}</small></div>
+                      <em className={`workspace-log-status ${record.status === 'queued' ? 'queued' : ''}`}>{record.status === 'delivered' ? '已送达' : '待补投'}</em>
+                    </div>
+                    <p className="workspace-message-preview">{record.message_preview}</p>
+                    <div className="workspace-response-preview"><span>回执预览</span><p>{record.response_preview || (record.status === 'queued' ? '尚未送达，暂无真实回执。' : '已送达，但当前记录没有 response_preview。')}</p></div>
+                  </div>
+                ))}
+              </div>
+            ) : <div className="workspace-empty"><OfficeIcon name="database" size={18} /><span>{activityLoading ? '正在读取 sent.jsonl 与 outbox.jsonl…' : '当前空间暂无真实送达或待补投记录'}</span></div>}
+          </div>
+
           <div className="workspace-member-task-card">
             <div className="workspace-section-heading"><div><span>Member Activity</span><h3>成员最近任务辅助区</h3></div><small>按成员粗略关联 · 最近 {recentMemberTasks.length} 条</small></div>
             {recentMemberTasks.length > 0 ? (
@@ -1001,6 +1108,32 @@ function WorkspacePage({ tasks, onDispatch, onExpertSubmit }: { tasks: TaskItem[
                 ))}
               </div>
             ) : null}
+          </div>
+
+          <div className="workspace-receipt-card">
+            <div className="workspace-section-heading"><div><span>Expert Receipts</span><h3>专家团回执</h3></div><small>仅展示真实回执预览，不生成专家结论</small></div>
+            {latestExpertBatch.length > 0 ? (
+              <div className="workspace-receipt-list">
+                {latestExpertBatch.map((log) => {
+                  const matchedRecord = [...workspaceActivity.sent, ...workspaceActivity.outbox].find((record) => (
+                    record.agent_id === log.targetAgentId
+                    && (log.batchId ? record.message_preview.includes(log.batchId) : record.message_preview.includes(log.title))
+                  ));
+                  const status = matchedRecord?.status ?? log.status;
+                  const responsePreview = matchedRecord?.response_preview || log.responsePreview;
+                  return (
+                    <div className={status} key={log.id}>
+                      <div className="workspace-receipt-head">
+                        <span><OfficeIcon name={status === 'delivered' ? 'check' : status === 'queued' ? 'database' : 'alert'} size={15} /></span>
+                        <div><strong>{formatAgentName(log.targetAgentId)}</strong><small>{status === 'delivered' ? '已发送' : status === 'queued' ? '待补投' : '失败'} · {formatTime(matchedRecord?.time || log.createdAt)}</small></div>
+                      </div>
+                      <p className="workspace-receipt-question">{log.title}</p>
+                      <div className="workspace-response-preview"><span>回执预览</span><p>{responsePreview || (status === 'queued' ? '尚未送达，暂无真实回执。' : status === 'failed' ? '投递失败，暂无真实回执。' : '已发送，但当前记录没有 response_preview。')}</p></div>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : <div className="workspace-empty"><OfficeIcon name="agent" size={18} /><span>本空间还没有可关联的专家团回执</span></div>}
           </div>
 
           <div className="workspace-log-card">
@@ -1237,6 +1370,7 @@ export default function App() {
   const [evolution, setEvolution] = useState<EvolutionData>({});
   const [tasks, setTasks] = useState<TaskItem[]>([]);
   const [outbox, setOutbox] = useState<OutboxData>({ count: 0, items: [] });
+  const [channels, setChannels] = useState<ChannelHealth[]>([]);
   const [retrying, setRetrying] = useState(false);
   const [retryStatus, setRetryStatus] = useState('');
   const [autoRetryEnabled, setAutoRetryEnabled] = useState(false);
@@ -1259,6 +1393,10 @@ export default function App() {
       setOutbox(outboxRes.data);
       setOffline(agentRes.offline || evolutionRes.offline || taskRes.offline || outboxRes.offline);
     });
+  }, []);
+
+  useEffect(() => {
+    fetchChannelHealth().then(setChannels).catch(() => setChannels([]));
   }, []);
 
   useEffect(() => {
@@ -1290,7 +1428,7 @@ export default function App() {
       if (result.status === 'rejected') {
         return { agentId, status: 'failed', error: result.reason instanceof Error ? result.reason.message : '发送失败' };
       }
-      if (result.value.delivered) return { agentId, status: 'delivered' };
+      if (result.value.delivered) return { agentId, status: 'delivered', responsePreview: result.value.response_preview };
       if (result.value.queued) return { agentId, status: 'queued' };
       return { agentId, status: 'failed', error: result.value.error || result.value.fallback_reason || '发送失败' };
     });
@@ -1300,10 +1438,10 @@ export default function App() {
     return results;
   }
 
-  async function handleWorkspaceExpertSubmit(memberIds: ExpertAgentId[], workspaceName: string, goal: string, question: string) {
+  async function handleWorkspaceExpertSubmit(memberIds: ExpertAgentId[], workspaceName: string, goal: string, question: string, batchId: string) {
     const deliveryResults = await Promise.allSettled(memberIds.map(async (agentId) => {
       const expert = expertPanelAgents.find((item) => item.id === agentId);
-      const message = `你正在参与工作空间“${workspaceName}”的专家协作。\n空间目标：${goal}\n成员角色视角：${expert?.name ?? formatAgentName(agentId)} · ${expert?.perspective ?? '空间成员视角'}。${expert?.prompt ?? ''}\n\n用户问题：\n${question}`;
+      const message = `你正在参与工作空间“${workspaceName}”的专家协作。\n空间名称：${workspaceName}\n投递批次：${batchId}\n空间目标：${goal}\n成员角色视角：${expert?.name ?? formatAgentName(agentId)} · ${expert?.perspective ?? '空间成员视角'}。${expert?.prompt ?? ''}\n\n用户问题：\n${question}`;
       return sendMessage(agentId, message);
     }));
     const results = deliveryResults.map<ExpertDeliveryResult>((result, index) => {
@@ -1311,7 +1449,7 @@ export default function App() {
       if (result.status === 'rejected') {
         return { agentId, status: 'failed', error: result.reason instanceof Error ? result.reason.message : '发送失败' };
       }
-      if (result.value.delivered) return { agentId, status: 'delivered' };
+      if (result.value.delivered) return { agentId, status: 'delivered', responsePreview: result.value.response_preview };
       if (result.value.queued) return { agentId, status: 'queued' };
       return { agentId, status: 'failed', error: result.value.error || result.value.fallback_reason || '发送失败' };
     });
@@ -1327,7 +1465,7 @@ export default function App() {
     let result: ExpertDeliveryResult;
     try {
       const response = await sendMessage(agentId, message);
-      if (response.delivered) result = { agentId, status: 'delivered' };
+      if (response.delivered) result = { agentId, status: 'delivered', responsePreview: response.response_preview };
       else if (response.queued) result = { agentId, status: 'queued' };
       else result = { agentId, status: 'failed', error: response.error || response.fallback_reason || '发送失败' };
     } catch (error) {
@@ -1449,7 +1587,7 @@ export default function App() {
         <div className={`connection-state ${offline ? 'offline' : ''}`}><span />{offline ? '离线数据' : '已连接'}</div>
       </header>
       <OfflineBanner show={offline} />
-      {tab === 'office' && <OfficePage agents={agents} tasks={tasks} selectedId={selectedId} setSelectedId={setSelectedId} onSelectAgent={handleSelectAgentFromOffice} pending={outbox.count} backendOffline={offline} installPrompt={installPrompt} installed={installed} onInstall={handleInstall} />}
+      {tab === 'office' && <OfficePage agents={agents} tasks={tasks} channels={channels} selectedId={selectedId} setSelectedId={setSelectedId} onSelectAgent={handleSelectAgentFromOffice} pending={outbox.count} backendOffline={offline} installPrompt={installPrompt} installed={installed} onInstall={handleInstall} />}
       {tab === 'workspace' && <WorkspacePage tasks={tasks} onDispatch={handleWorkspaceDispatch} onExpertSubmit={handleWorkspaceExpertSubmit} />}
       {tab === 'agent' && <AgentPage agent={selectedAgent} tasks={tasks} evolution={evolution} />}
       {tab === 'evolution' && <EvolutionPage evolution={evolution} />}

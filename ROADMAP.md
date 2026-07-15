@@ -2,7 +2,7 @@
 
 ## 当前阶段
 
-MVP v1：Hermes Office Mobile 已跑通本地最小闭环，并完成工作空间与专家团执行 MVP。
+MVP v1：Hermes Office Mobile 已跑通本地最小闭环，并完成工作空间结果回流、专家团回执预览和开发态通道诊断。
 
 ## 已完成
 
@@ -35,6 +35,11 @@ MVP v1：Hermes Office Mobile 已跑通本地最小闭环，并完成工作空�
 - 补齐统一任务历史：新增 `GET /api/tasks` 聚合 Cron、outbox、sent 与 Gateway activity，统一六类状态；任务页改用统一列表、统一统计和全部/进行中/已完成/待补投/中断失败/事件筛选。
 - 完成统一任务详情面板：任务卡升级为保留原视觉的可访问按钮，点击后在列表上方展示标题、状态、来源、员工、时间、任务详情、业务化失败原因、技术信息与任务 ID；待补投、失败、暂停或 outbox 来源任务可复用现有兜底队列逐条重试，并沿用 `retrying` 与队列数量禁用逻辑。
 - 成功派活和 outbox 重试成功均写入 `backend/runtime/sent.jsonl`；sent 文件缺失时按空历史返回。
+- 新增 `GET /api/workspaces/activity`，按完整空间名称从 sent、outbox 和统一任务读取脱敏真实记录，并返回已有 `response_preview`。
+- 空间页新增“空间结果”和“专家团回执”，同批专家投递以 `batchId` 关联；旧 localStorage 日志继续兼容，不生成专家结论或伪造总结。
+- 空间任务排序固定为 sent 已送达优先、outbox 待补投次之、普通任务最后，成员最近任务保留为独立辅助区。
+- 首页新增通道健康卡片，展示 `default:8642`、`media-ops:8650`、`investor:8660`、`BFF:8787`、在线状态和 `timeout=45s`，profile 离线时提示启动 gateway。
+- 完成移动端底部安全区、空状态与空间长文本截断调整。
 - 主 UI 移除 emoji 与非统一图标，保留五个 Tab、派活和 outbox 重试数据链路。
 - 使用 Dragon Image2 生成并接入小黑、小橙、小金三位员工头像，替换临时 SVG 占位图。
 - 补全 Agent 员工档案：增加角色能力标签、在线/离线与端口状态、最近任务状态摘要、按员工匹配的最近 5 条任务，并将 SOUL.md / AGENT.md 产品化为“人格档案 / 执行手册”。
@@ -48,8 +53,9 @@ MVP v1：Hermes Office Mobile 已跑通本地最小闭环，并完成工作空�
 
 ## 最近验证
 
-- `backend/.venv/bin/python -m py_compile backend/main.py`：通过。
-- `cd frontend && npm run build`：通过。
+- 2026-07-16：`backend/.venv/bin/python -m py_compile backend/main.py` 通过。
+- 2026-07-16：`cd frontend && npm run build` 通过。
+- 三 profile 送达验证记录格式：`日期 / profile / port / delivered=true / response_preview`；本轮不伪造新的送达记录。
 - `GET /api/health`：200。
 - `GET /api/agents`：200，返回 3 个 Agent。
 - `POST /api/messages`：API Server 可用时直接发送；端口、key 或请求异常时返回 outbox 兜底结果；BFF 到 Hermes API Server 的派活超时已从 12 秒提升到 45 秒，避免慢响应误入 outbox。
@@ -57,6 +63,8 @@ MVP v1：Hermes Office Mobile 已跑通本地最小闭环，并完成工作空�
 - `GET /api/tasks`：200，返回统一排序的任务历史与状态统计。
 - `POST /api/outbox/retry`：200，可按 `limit` 小步重试，失败项继续保留。
 - 浏览器验证：`/api/agents`、`/api/activity`、`/api/evolution`、`/api/cron`、`/api/messages` 均 200，network failures 为 0。
+
+当前进程仍是开发态运行，不包含 systemd、s6、supervisor 或其他生产守护；启动顺序为三个 profile gateway、BFF、Vite。
 
 ## 下一步
 

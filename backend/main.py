@@ -27,6 +27,8 @@ PROJECT_ROOT = Path(__file__).resolve().parent
 REPOSITORY_ROOT = PROJECT_ROOT.parent
 OUTBOX_FILE = PROJECT_ROOT / "runtime" / "outbox.jsonl"
 SENT_FILE = PROJECT_ROOT / "runtime" / "sent.jsonl"
+BFF_PORT = 8787
+MESSAGE_TIMEOUT_SECONDS = 45
 
 PROFILE_DEFINITIONS = (
     {
@@ -193,7 +195,7 @@ def deliver_to_api_server(port: int, key: str, message: str) -> str:
         },
         method="POST",
     )
-    with urllib.request.urlopen(request, timeout=45) as response:
+    with urllib.request.urlopen(request, timeout=MESSAGE_TIMEOUT_SECONDS) as response:
         payload = json.loads(response.read().decode("utf-8"))
     return response_content(payload)
 
@@ -288,6 +290,34 @@ def compact_outbox_record(record: dict[str, Any]) -> dict[str, Any]:
         "message_preview": message[:80] + ("…" if len(message) > 80 else ""),
         "stored_at": safe_string(record.get("stored_at")),
         "fallback_reason": safe_string(record.get("fallback_reason")),
+    }
+
+
+def record_contains_workspace(record: dict[str, Any], workspace_name: str) -> bool:
+    if not workspace_name:
+        return False
+    for key in ("message", "title", "detail", "message_preview"):
+        value = record.get(key)
+        if isinstance(value, str) and workspace_name in value:
+            return True
+    return False
+
+
+def compact_workspace_record(record: dict[str, Any], source: str) -> dict[str, Any]:
+    message = redact_text(str(record.get("message") or ""), limit=4000)
+    response_preview = safe_string(record.get("response_preview"), limit=500)
+    fallback_reason = safe_string(record.get("fallback_reason"), limit=160)
+    return {
+        "id": f"{source}:{record.get('id')}",
+        "source": source,
+        "agent_id": safe_string(record.get("agent_id"), limit=64),
+        "status": "delivered" if source == "sent" else "queued",
+        "time": task_time_value(
+            record.get("delivered_at") if source == "sent" else record.get("stored_at")
+        ),
+        "message_preview": message,
+        "response_preview": response_preview,
+        "fallback_reason": fallback_reason,
     }
 
 
@@ -641,6 +671,28 @@ def evolution_skill_tree(skill_entries: list[Path]) -> list[dict[str, Any]]:
 
 @app.get("/api/health")
 def health() -> dict[str, Any]:
+    channels = []
+    for definition in PROFILE_DEFINITIONS:
+        port = int(definition["port"])
+        online = is_port_listening(port)
+        channels.append({
+            "id": definition["id"],
+            "name": definition["name"],
+            "port": port,
+            "online": online,
+            "timeout_seconds": MESSAGE_TIMEOUT_SECONDS,
+            "last_error_reason": None if online else "api_server_offline",
+            "recovery_hint": None if online else "需要启动 profile gateway",
+        })
+    channels.append({
+        "id": "bff",
+        "name": "BFF",
+        "port": BFF_PORT,
+        "online": True,
+        "timeout_seconds": MESSAGE_TIMEOUT_SECONDS,
+        "last_error_reason": None,
+        "recovery_hint": None,
+    })
     return {
         "ok": True,
         "service": "hermes-office-mobile-bff",
@@ -655,6 +707,8 @@ def health() -> dict[str, Any]:
             "cron_jobs": CRON_JOBS.is_file(),
             "skills": SKILLS_HOME.is_dir(),
         },
+        "message_timeout_seconds": MESSAGE_TIMEOUT_SECONDS,
+        "channels": channels,
     }
 
 
@@ -810,6 +864,45 @@ def tasks() -> dict[str, Any]:
         "total": len(items),
         "status_counts": dict(status_counts),
         "items": items,
+    }
+
+
+@app.get("/api/workspaces/activity")
+def workspace_activity(workspace_name: str) -> dict[str, Any]:
+    normalized_name = redact_text(workspace_name.strip(), limit=160)
+    if not normalized_name:
+        return {
+            "generated_at": utc_now(),
+            "workspace_name": "",
+            "redacted": True,
+            "sent": [],
+            "outbox": [],
+            "tasks": [],
+        }
+
+    sent_records = [
+        compact_workspace_record(record, "sent")
+        for record in read_jsonl_records(SENT_FILE)
+        if record_contains_workspace(record, normalized_name)
+    ]
+    outbox_records = [
+        compact_workspace_record(record, "outbox")
+        for record in read_outbox_records()
+        if record_contains_workspace(record, normalized_name)
+    ]
+    task_records = [
+        item for item in tasks().get("items", [])
+        if isinstance(item, dict) and record_contains_workspace(item, normalized_name)
+    ]
+    sent_records.sort(key=lambda item: task_sort_value(item.get("time")), reverse=True)
+    outbox_records.sort(key=lambda item: task_sort_value(item.get("time")), reverse=True)
+    return {
+        "generated_at": utc_now(),
+        "workspace_name": normalized_name,
+        "redacted": True,
+        "sent": sent_records,
+        "outbox": outbox_records,
+        "tasks": task_records,
     }
 
 
