@@ -152,6 +152,35 @@ function formatTaskTechnicalMeta(task: TaskItem) {
   ]);
 }
 
+function safeTaskFieldText(value: unknown): string {
+  if (value === null || value === undefined) return '';
+  if (typeof value === 'string') return value;
+  try {
+    return typeof value === 'object' ? JSON.stringify(value) ?? '' : String(value);
+  } catch {
+    return '';
+  }
+}
+
+function taskContainsText(task: TaskItem, query: string) {
+  const normalizedQuery = query.trim().toLocaleLowerCase();
+  if (!normalizedQuery) return false;
+  const taskFields = task as TaskItem & Record<string, unknown>;
+  return ['title', 'detail', 'source', 'technical_message', 'fallback_reason']
+    .some((field) => safeTaskFieldText(taskFields[field]).toLocaleLowerCase().includes(normalizedQuery));
+}
+
+function sortTasksByRecent(tasks: TaskItem[]) {
+  return tasks
+    .map((task, index) => ({ task, index }))
+    .sort((left, right) => {
+      const leftTime = left.task.time ? new Date(left.task.time).getTime() : 0;
+      const rightTime = right.task.time ? new Date(right.task.time).getTime() : 0;
+      return (Number.isNaN(rightTime) ? 0 : rightTime) - (Number.isNaN(leftTime) ? 0 : leftTime) || left.index - right.index;
+    })
+    .map(({ task }) => task);
+}
+
 function StatusPill({ status }: { status: string }) {
   const online = status === 'online';
   return (
@@ -727,19 +756,22 @@ function WorkspacePage({ tasks, onDispatch, onExpertSubmit }: { tasks: TaskItem[
   const [dispatching, setDispatching] = useState(false);
   const [dispatchResult, setDispatchResult] = useState<ExpertDeliveryResult | null>(null);
   const selectedWorkspace = workspaces.find((workspace) => workspace.id === selectedWorkspaceId) ?? workspaces[0];
-  const recentTasks = useMemo(() => {
+  const workspaceTasks = useMemo(() => {
     if (!selectedWorkspace) return [];
-    return tasks
-      .map((task, index) => ({ task, index }))
-      .filter(({ task }) => Boolean(task.agent_id) && selectedWorkspace.memberIds.includes(task.agent_id as ExpertAgentId))
-      .sort((left, right) => {
-        const leftTime = left.task.time ? new Date(left.task.time).getTime() : 0;
-        const rightTime = right.task.time ? new Date(right.task.time).getTime() : 0;
-        return (Number.isNaN(rightTime) ? 0 : rightTime) - (Number.isNaN(leftTime) ? 0 : leftTime) || left.index - right.index;
-      })
-      .slice(0, 5)
-      .map(({ task }) => task);
+    return sortTasksByRecent(tasks.filter((task) => taskContainsText(task, selectedWorkspace.name)));
   }, [selectedWorkspace, tasks]);
+  const recentWorkspaceTasks = workspaceTasks.slice(0, 5);
+  const recentMemberTasks = useMemo(() => {
+    if (!selectedWorkspace) return [];
+    return sortTasksByRecent(tasks.filter((task) => (
+      Boolean(task.agent_id) && selectedWorkspace.memberIds.includes(task.agent_id as ExpertAgentId)
+    ))).slice(0, 5);
+  }, [selectedWorkspace, tasks]);
+  const workspaceQueuedTasks = workspaceTasks.filter((task) => task.status === 'queued');
+  const unmatchedQueuedLogs = selectedWorkspace?.logs.filter((log) => (
+    log.status === 'queued' && !workspaceQueuedTasks.some((task) => taskContainsText(task, log.title))
+  )) ?? [];
+  const workspacePendingCount = workspaceQueuedTasks.length + unmatchedQueuedLogs.length;
 
   useEffect(() => {
     window.localStorage.setItem(workspaceStorageKey, JSON.stringify(workspaces));
@@ -891,6 +923,13 @@ function WorkspacePage({ tasks, onDispatch, onExpertSubmit }: { tasks: TaskItem[
             </div>
           </div>
 
+          <div className="workspace-mini-stats" aria-label="空间状态概览">
+            <div><span>成员数</span><strong>{selectedWorkspace.memberIds.length}</strong><small>当前空间成员</small></div>
+            <div><span>空间日志数</span><strong>{selectedWorkspace.logs.length}</strong><small>最近最多 20 条</small></div>
+            <div><span>相关任务数</span><strong>{workspaceTasks.length}</strong><small>真实任务名称命中</small></div>
+            <div><span>待补投数</span><strong>{workspacePendingCount}</strong><small>任务 {workspaceQueuedTasks.length} · 日志 {unmatchedQueuedLogs.length}</small></div>
+          </div>
+
           <div className="workspace-dispatch-card">
             <div className="workspace-section-heading"><div><span>Workspace Dispatch</span><h3>空间派活</h3></div><small>单独指派当前空间成员</small></div>
             <label className="workspace-dispatch-select">
@@ -913,10 +952,10 @@ function WorkspacePage({ tasks, onDispatch, onExpertSubmit }: { tasks: TaskItem[
           </div>
 
           <div className="workspace-task-card">
-            <div className="workspace-section-heading"><div><span>Task Summary</span><h3>空间任务摘要</h3></div><small>{recentTasks.length > 0 ? `最近 ${recentTasks.length} 条` : '暂无匹配任务'}</small></div>
-            {recentTasks.length > 0 ? (
+            <div className="workspace-section-heading"><div><span>Task Summary</span><h3>空间任务摘要</h3></div><small>{recentWorkspaceTasks.length > 0 ? `名称命中 · 最近 ${recentWorkspaceTasks.length} 条` : '暂无名称命中'}</small></div>
+            {recentWorkspaceTasks.length > 0 ? (
               <div className="workspace-task-list">
-                {recentTasks.map((task) => {
+                {recentWorkspaceTasks.map((task) => {
                   const taskMeta = taskStatusMeta[task.status];
                   return (
                     <div key={task.id}>
@@ -927,7 +966,25 @@ function WorkspacePage({ tasks, onDispatch, onExpertSubmit }: { tasks: TaskItem[
                   );
                 })}
               </div>
-            ) : <div className="workspace-empty"><OfficeIcon name="activity" size={18} /><span>当前成员还没有可展示的真实任务</span></div>}
+            ) : <div className="workspace-empty"><OfficeIcon name="activity" size={18} /><span>真实任务中暂未找到包含“{selectedWorkspace.name}”的记录</span></div>}
+          </div>
+
+          <div className="workspace-member-task-card">
+            <div className="workspace-section-heading"><div><span>Member Activity</span><h3>成员最近任务辅助区</h3></div><small>按成员粗略关联 · 最近 {recentMemberTasks.length} 条</small></div>
+            {recentMemberTasks.length > 0 ? (
+              <div className="workspace-task-list workspace-member-task-list">
+                {recentMemberTasks.map((task) => {
+                  const taskMeta = taskStatusMeta[task.status];
+                  return (
+                    <div key={task.id}>
+                      <span className={`task-check ${task.status}`}><OfficeIcon name={taskMeta.icon} size={14} /></span>
+                      <div><strong>{task.title}</strong><p>{formatTaskDetail(task, '任务详情待补充')}</p><small>{formatAgentName(task.agent_id)} · {formatTime(task.time)}</small></div>
+                      <em className={`task-status ${task.status}`}>{taskMeta.label}</em>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : <div className="workspace-empty"><OfficeIcon name="agent" size={18} /><span>当前空间成员暂无可展示的真实任务</span></div>}
           </div>
 
           <div className="workspace-expert-card">
