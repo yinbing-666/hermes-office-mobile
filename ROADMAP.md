@@ -2,7 +2,7 @@
 
 ## 当前阶段
 
-MVP v1：Hermes Office Mobile 已跑通本地最小闭环。
+MVP v1：Hermes Office Mobile 已跑通本地最小闭环，并进入“专家团执行层”MVP。
 
 ## 已完成
 
@@ -12,6 +12,7 @@ MVP v1：Hermes Office Mobile 已跑通本地最小闭环。
 - 实现长期可用版派活第一刀：`POST /api/messages` 优先调用对应 Hermes API Server，失败写入 `backend/runtime/outbox.jsonl`。
 - 实现三 profile 路由：`default:8642`、`media-ops:8650`、`investor:8660`，Bearer key 只从各自 config 的 `platforms.api_server.extra.key` 读取。
 - 前端发送状态区分“已发送到 Hermes”和“已入队兜底”。
+- 完成专家团执行层 MVP：任务页统计后新增专家团卡片，默认召集小黑、小橙、小金，分别以主控汇总、内容传播、商业风险视角并发调用现有消息发送链路；页面仅展示 Hermes 已发送、兜底已入队或失败，不伪造专家回答，真实回答继续由 Hermes 通道与 outbox 承接，发送后刷新任务和兜底队列。
 - 实现长期可用版第二刀：`GET /api/outbox` 展示兜底队列，`POST /api/outbox/retry` 小步重试投递，成功写入 `backend/runtime/sent.jsonl`，失败保留 outbox。
 - 任务动态页增加「兜底队列」模块和「重试 1 条」按钮，避免移动端长时间卡在批量重试。
 - 兜底队列增加默认关闭的「自动补投」安全开关：仅当前浏览器任务页会话生效，每 60 秒固定重试 1 条；关闭、离开任务页或刷新即停止，队列清空后自动停用并显示完成状态。

@@ -11,6 +11,9 @@ type BeforeInstallPromptEvent = Event & {
 
 type RoleMeta = { role: string; focus: string; tone: string; avatar: string; tags: string[] };
 type AutoRetryReport = { completed: boolean; lastAttemptAt: string | null; delivered: number | null; remaining: number | null; error: string };
+type ExpertAgentId = 'default' | 'media-ops' | 'investor';
+type ExpertDeliveryStatus = 'delivered' | 'queued' | 'failed';
+type ExpertDeliveryResult = { agentId: ExpertAgentId; status: ExpertDeliveryStatus; error?: string };
 
 const fallbackRole: RoleMeta = { role: 'Hermes 智能员工', focus: '自定义智能员工', tone: 'blue', avatar: '', tags: ['任务执行', '协作响应'] };
 
@@ -19,6 +22,12 @@ const agentNameMap: Record<string, string> = {
   'media-ops': '小橙',
   investor: '小金',
 };
+
+const expertPanelAgents: Array<{ id: ExpertAgentId; name: string; perspective: string; prompt: string }> = [
+  { id: 'default', name: '小黑', perspective: '主控汇总视角', prompt: '请从主控汇总视角梳理问题、协调判断，并形成可供后续汇总的执行意见。' },
+  { id: 'media-ops', name: '小橙', perspective: '内容传播视角', prompt: '请从内容传播视角分析受众、表达、渠道与传播执行重点。' },
+  { id: 'investor', name: '小金', perspective: '商业风险视角', prompt: '请从商业风险视角分析价值、成本、回报、约束与潜在风险。' },
+];
 
 const issueReasonMap: Record<string, string> = {
   api_request_failed: 'Hermes 通道请求失败',
@@ -665,8 +674,11 @@ const taskStatusMeta: Record<TaskStatus, { label: string; icon: OfficeIconName }
 
 const taskSourceLabels: Record<string, string> = { cron: '定时任务', outbox: '兜底队列', sent: '已送达', gateway: '网关事件' };
 
-function ActivityPage({ tasks, outbox, onRetryOutbox, retryStatus, retrying, autoRetryEnabled, autoRetryReport, onToggleAutoRetry }: { tasks: TaskItem[]; outbox: OutboxData; onRetryOutbox: () => void; retryStatus: string; retrying: boolean; autoRetryEnabled: boolean; autoRetryReport: AutoRetryReport; onToggleAutoRetry: () => void }) {
+function ActivityPage({ tasks, outbox, onExpertPanelSubmit, onRetryOutbox, retryStatus, retrying, autoRetryEnabled, autoRetryReport, onToggleAutoRetry }: { tasks: TaskItem[]; outbox: OutboxData; onExpertPanelSubmit: (question: string) => Promise<ExpertDeliveryResult[]>; onRetryOutbox: () => void; retryStatus: string; retrying: boolean; autoRetryEnabled: boolean; autoRetryReport: AutoRetryReport; onToggleAutoRetry: () => void }) {
   const [filter, setFilter] = useState<TaskFilter>('all');
+  const [expertQuestion, setExpertQuestion] = useState('');
+  const [expertSubmitting, setExpertSubmitting] = useState(false);
+  const [expertResults, setExpertResults] = useState<ExpertDeliveryResult[]>([]);
   const runningCount = tasks.filter((task) => task.status === 'running').length;
   const completedCount = tasks.filter((task) => task.status === 'completed').length;
   const queuedCount = tasks.filter((task) => task.status === 'queued').length;
@@ -675,6 +687,18 @@ function ActivityPage({ tasks, outbox, onRetryOutbox, retryStatus, retrying, aut
     if (filter === 'interrupted') return task.status === 'failed' || task.status === 'paused';
     return task.status === filter;
   });
+
+  async function handleExpertSubmit() {
+    const question = expertQuestion.trim();
+    if (!question || expertSubmitting) return;
+    setExpertSubmitting(true);
+    setExpertResults([]);
+    try {
+      setExpertResults(await onExpertPanelSubmit(question));
+    } finally {
+      setExpertSubmitting(false);
+    }
+  }
 
   return (
     <section className="page-section activity-page">
@@ -686,6 +710,42 @@ function ActivityPage({ tasks, outbox, onRetryOutbox, retryStatus, retrying, aut
         <div><span className="task-stat-icon running"><OfficeIcon name="clock" size={16} /></span><strong>{runningCount}</strong><small>进行中</small></div>
         <div><span className="task-stat-icon completed"><OfficeIcon name="check" size={16} /></span><strong>{completedCount}</strong><small>已完成</small></div>
         <div><span className="task-stat-icon pending"><OfficeIcon name="database" size={16} /></span><strong>{queuedCount}</strong><small>待补投</small></div>
+      </div>
+
+      <div className="expert-panel">
+        <div className="expert-panel-heading">
+          <div className="expert-panel-icon"><OfficeIcon name="agent" size={20} /></div>
+          <div><p>专家团</p><strong>默认召集三位专家共同执行</strong><small>本页仅展示投递结果，真实回答由 Hermes 通道或兜底队列承接</small></div>
+        </div>
+        <div className="expert-chips" aria-label="默认召集的专家">
+          {expertPanelAgents.map((expert) => (
+            <span key={expert.id} className={`expert-chip ${expert.id}`}>
+              <i />
+              <strong>{expert.name}</strong>
+              <small>{expert.perspective}</small>
+            </span>
+          ))}
+        </div>
+        <textarea
+          value={expertQuestion}
+          onChange={(event) => setExpertQuestion(event.target.value)}
+          placeholder="输入需要专家团共同判断或执行的问题"
+          aria-label="专家团问题"
+        />
+        <button className="expert-submit" type="button" onClick={() => void handleExpertSubmit()} disabled={expertSubmitting || !expertQuestion.trim()}>
+          <OfficeIcon name="send" size={16} />
+          {expertSubmitting ? '正在召集…' : '召集专家团'}
+        </button>
+        {expertResults.length > 0 ? (
+          <div className="expert-delivery-results" aria-live="polite">
+            {expertResults.map((result) => (
+              <div key={result.agentId} className={result.status}>
+                <span><OfficeIcon name={result.status === 'delivered' ? 'check' : result.status === 'queued' ? 'database' : 'alert'} size={15} /></span>
+                <div><strong>{formatAgentName(result.agentId)}</strong><small>{result.status === 'delivered' ? '已发送到 Hermes' : result.status === 'queued' ? '已入队兜底' : '失败'}</small></div>
+              </div>
+            ))}
+          </div>
+        ) : null}
       </div>
 
       <div className="outbox-card">
@@ -819,6 +879,26 @@ export default function App() {
 
   const selectedAgent = useMemo(() => agents.find((agent) => agent.id === selectedId) ?? agents[0], [agents, selectedId]);
 
+  async function handleExpertPanelSubmit(question: string) {
+    const deliveryResults = await Promise.allSettled(expertPanelAgents.map(async (expert) => {
+      const message = `你正在参与“专家团执行”协作。你的角色是${expert.name}，负责${expert.perspective}。${expert.prompt}\n\n用户问题：\n${question}`;
+      return sendMessage(expert.id, message);
+    }));
+    const results = deliveryResults.map<ExpertDeliveryResult>((result, index) => {
+      const agentId = expertPanelAgents[index].id;
+      if (result.status === 'rejected') {
+        return { agentId, status: 'failed', error: result.reason instanceof Error ? result.reason.message : '发送失败' };
+      }
+      if (result.value.delivered) return { agentId, status: 'delivered' };
+      if (result.value.queued) return { agentId, status: 'queued' };
+      return { agentId, status: 'failed', error: result.value.error || result.value.fallback_reason || '发送失败' };
+    });
+    const [refreshedOutbox, refreshedTasks] = await Promise.all([fetchOutbox(), fetchTasks()]);
+    setOutbox(refreshedOutbox.data);
+    setTasks(refreshedTasks.data.items ?? []);
+    return results;
+  }
+
   async function performOutboxRetry(mode: 'manual' | 'auto') {
     if (retryingRef.current || outbox.count === 0) return;
     retryingRef.current = true;
@@ -932,7 +1012,7 @@ export default function App() {
       {tab === 'office' && <OfficePage agents={agents} tasks={tasks} selectedId={selectedId} setSelectedId={setSelectedId} onSelectAgent={handleSelectAgentFromOffice} pending={outbox.count} backendOffline={offline} installPrompt={installPrompt} installed={installed} onInstall={handleInstall} />}
       {tab === 'agent' && <AgentPage agent={selectedAgent} tasks={tasks} evolution={evolution} />}
       {tab === 'evolution' && <EvolutionPage evolution={evolution} />}
-      {tab === 'activity' && <ActivityPage tasks={tasks} outbox={outbox} onRetryOutbox={handleRetryOutbox} retryStatus={retryStatus} retrying={retrying} autoRetryEnabled={autoRetryEnabled} autoRetryReport={autoRetryReport} onToggleAutoRetry={handleToggleAutoRetry} />}
+      {tab === 'activity' && <ActivityPage tasks={tasks} outbox={outbox} onExpertPanelSubmit={handleExpertPanelSubmit} onRetryOutbox={handleRetryOutbox} retryStatus={retryStatus} retrying={retrying} autoRetryEnabled={autoRetryEnabled} autoRetryReport={autoRetryReport} onToggleAutoRetry={handleToggleAutoRetry} />}
       <nav className="tabbar" aria-label="主导航">
         {tabs.map(({ key, label, icon }) => (
           <button key={key} className={tab === key ? 'selected' : ''} onClick={() => handleTabChange(key)}>
