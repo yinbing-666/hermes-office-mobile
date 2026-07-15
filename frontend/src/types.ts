@@ -47,6 +47,15 @@ export interface EvolutionData {
   }>;
 }
 
+export interface MessageResponse {
+  ok: boolean;
+  agent_id: string;
+  queued: boolean;
+  message_preview: string;
+  stored_at: string;
+  error?: string;
+}
+
 export interface ApiState<T> {
   data: T;
   offline: boolean;

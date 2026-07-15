@@ -1,0 +1,39 @@
+# ROADMAP
+
+## 当前阶段
+
+MVP v1：Hermes Office Mobile 已跑通本地最小闭环。
+
+## 已完成
+
+- 初始化项目骨架和约束文档。
+- 实现 FastAPI BFF：`/api/health`、`/api/agents`、`/api/activity`、`/api/evolution`、`/api/cron`。
+- 实现 Vite React PWA：办公室、Agent 详情、进化档案、任务动态四个 Tab。
+- 实现最小派活闭环：`POST /api/messages` 写入 `backend/runtime/outbox.jsonl`。
+- 完成前端生产构建验证：`npm run build`。
+- 完成后端语法和 API 烟测。
+- 完成 Chrome Headless/CDP 浏览器真实验证：页面加载、Tab 切换、API 请求、派活按钮、outbox 写入。
+
+## 最近验证
+
+- `backend/.venv/bin/python -m py_compile backend/main.py`：通过。
+- `cd frontend && npm run build`：通过。
+- `GET /api/health`：200。
+- `GET /api/agents`：200，返回 3 个 Agent。
+- `POST /api/messages`：200，写入 outbox。
+- 浏览器验证：`/api/agents`、`/api/activity`、`/api/evolution`、`/api/cron`、`/api/messages` 均 200，network failures 为 0。
+
+## 下一步
+
+1. 把 outbox 消息真正转发到 Hermes API Server。
+2. 增加移动端访问方式：Tailscale 内网优先。
+3. 优化视觉：办公室卡片更像「智能员工工位」。
+4. 增加 Agent 最近会话和最近任务摘要。
+5. 评估是否把龙虾浏览器资源作为远程 UI 验收节点。
+
+## 暂不做
+
+- 不做公网部署。
+- 不做完整聊天历史。
+- 不做复杂工作流画布。
+- 不接数据库。

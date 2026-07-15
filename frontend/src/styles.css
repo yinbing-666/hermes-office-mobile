@@ -108,7 +108,11 @@ p { color: var(--muted); line-height: 1.65; }
 .compose-card { padding: 16px; display: grid; gap: 10px; }
 .compose-card label { font-weight: 800; }
 textarea { min-height: 100px; resize: vertical; border: 1px solid var(--line); border-radius: 16px; padding: 12px; color: var(--text); background: #fffaf5; outline-color: var(--accent); }
-.compose-card button { padding: 12px; border-radius: 14px; background: #eadfd2; color: var(--muted); font-weight: 800; }
+.compose-card button { padding: 12px; border-radius: 14px; background: var(--accent); color: white; font-weight: 800; box-shadow: 0 8px 18px rgba(217, 119, 6, 0.18); }
+.compose-card button:disabled { background: #eadfd2; color: var(--muted); box-shadow: none; }
+.send-status { margin: 0; font-size: 13px; }
+.send-status.sent { color: var(--green); }
+.send-status.error { color: var(--red); }
 
 .timeline-card { padding: 16px; display: grid; gap: 10px; }
 .timeline-card h2 { margin: 0 0 4px; }

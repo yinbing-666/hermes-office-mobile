@@ -10,6 +10,8 @@ from typing import Any, Iterable
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel, Field
 
 
 HERMES_HOME = Path("/home/agentuser/.hermes")
@@ -17,6 +19,8 @@ PROFILES_HOME = HERMES_HOME / "profiles"
 GATEWAY_LOG = HERMES_HOME / "logs" / "gateway.log"
 CRON_JOBS = HERMES_HOME / "cron" / "jobs.json"
 SKILLS_HOME = HERMES_HOME / "skills"
+PROJECT_ROOT = Path(__file__).resolve().parent
+OUTBOX_FILE = PROJECT_ROOT / "runtime" / "outbox.jsonl"
 
 PROFILE_DEFINITIONS = (
     {"id": "default", "name": "小黑", "port": 8642},
@@ -48,6 +52,11 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+class MessageRequest(BaseModel):
+    agent_id: str = Field(..., min_length=1, max_length=64)
+    message: str = Field(..., min_length=1, max_length=4000)
 
 
 def utc_now() -> str:
@@ -321,3 +330,52 @@ def evolution() -> dict[str, Any]:
 @app.get("/api/cron")
 def cron() -> dict[str, Any]:
     return {"generated_at": utc_now(), **cron_summary()}
+
+
+@app.post("/api/messages")
+def queue_message(payload: MessageRequest) -> Any:
+    stored_at = utc_now()
+    agent_id = redact_text(payload.agent_id.strip(), limit=64)
+    message = redact_text(payload.message, limit=4000).strip()
+    preview = message[:80] + ("…" if len(message) > 80 else "")
+    if not agent_id or not message:
+        return JSONResponse(
+            status_code=422,
+            content={
+                "ok": False,
+                "queued": False,
+                "message_preview": preview,
+                "stored_at": stored_at,
+                "error": "agent_id 和 message 不能为空",
+            },
+        )
+    record = {
+        "stored_at": stored_at,
+        "agent_id": agent_id,
+        "message": message,
+        "queued": True,
+        "source": "hermes-office-mobile",
+    }
+    try:
+        OUTBOX_FILE.parent.mkdir(parents=True, exist_ok=True)
+        with OUTBOX_FILE.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(record, ensure_ascii=False) + "\n")
+    except OSError as exc:
+        return JSONResponse(
+            status_code=500,
+            content={
+                "ok": False,
+                "agent_id": agent_id,
+                "queued": False,
+                "message_preview": preview,
+                "stored_at": stored_at,
+                "error": f"消息入队失败：{type(exc).__name__}",
+            },
+        )
+    return {
+        "ok": True,
+        "agent_id": agent_id,
+        "queued": True,
+        "message_preview": preview,
+        "stored_at": stored_at,
+    }

@@ -1,4 +1,4 @@
-import type { ActivityItem, AgentInfo, ApiState, CronJob, EvolutionData } from './types';
+import type { ActivityItem, AgentInfo, ApiState, CronJob, EvolutionData, MessageResponse } from './types';
 
 const mockAgents: AgentInfo[] = [
   { id: 'default', name: '小黑', status: 'online', port: 8642, port_listening: true, profile_available: true },
@@ -44,4 +44,17 @@ export function fetchEvolution() {
 
 export function fetchCron() {
   return getJson<{ jobs: CronJob[]; total?: number; enabled?: number }>('/api/cron', { jobs: mockCron, total: 1, enabled: 1 });
+}
+
+export async function sendMessage(agentId: string, message: string): Promise<MessageResponse> {
+  const response = await fetch('/api/messages', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify({ agent_id: agentId, message }),
+  });
+  const data = await response.json().catch(() => null) as MessageResponse | null;
+  if (!response.ok || !data || !data.ok) {
+    throw new Error(data?.error || `HTTP ${response.status}`);
+  }
+  return data;
 }

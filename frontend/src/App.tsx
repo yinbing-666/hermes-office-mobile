@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { fetchActivity, fetchAgents, fetchCron, fetchEvolution } from './api';
+import { fetchActivity, fetchAgents, fetchCron, fetchEvolution, sendMessage } from './api';
 import type { ActivityItem, AgentInfo, CronJob, EvolutionData } from './types';
 
 type Tab = 'office' | 'agent' | 'evolution' | 'activity';
@@ -69,8 +69,34 @@ function OfficePage({ agents, selectedId, setSelectedId }: { agents: AgentInfo[]
 }
 
 function AgentPage({ agent }: { agent?: AgentInfo }) {
+  const [message, setMessage] = useState('');
+  const [sending, setSending] = useState(false);
+  const [sendStatus, setSendStatus] = useState<{ type: 'sent' | 'error'; text: string } | null>(null);
+
+  useEffect(() => {
+    setMessage('');
+    setSendStatus(null);
+  }, [agent?.id]);
+
   if (!agent) return <div className="empty-card">暂无 Agent 数据。</div>;
   const meta = roleMap[agent.id] ?? { role: 'Hermes Agent', focus: '自定义分身', emoji: '🤖' };
+
+  async function handleSend() {
+    const task = message.trim();
+    if (!task || sending || !agent) return;
+    setSending(true);
+    setSendStatus(null);
+    try {
+      const result = await sendMessage(agent.id, task);
+      setMessage('');
+      setSendStatus({ type: 'sent', text: `已入队 · ${formatTime(result.stored_at)}` });
+    } catch (error) {
+      setSendStatus({ type: 'error', text: error instanceof Error ? error.message : '发送失败，请稍后重试' });
+    } finally {
+      setSending(false);
+    }
+  }
+
   return (
     <section className="page-section">
       <div className="detail-card">
@@ -86,9 +112,18 @@ function AgentPage({ agent }: { agent?: AgentInfo }) {
         <div className="info-card"><span>AGENT.md</span><strong>{agent.agent?.present ? '存在' : '暂无'}</strong><small>{formatTime(agent.agent?.modified_at)}</small></div>
       </div>
       <div className="compose-card">
-        <label>派活入口</label>
-        <textarea placeholder={`给${agent.name}发一条任务。v1 先展示入口，后续接 Hermes API Server。`} />
-        <button disabled>发送任务（下一版接入）</button>
+        <label htmlFor="agent-task">派活入口</label>
+        <textarea
+          id="agent-task"
+          value={message}
+          maxLength={4000}
+          onChange={(event) => setMessage(event.target.value)}
+          placeholder={`给${agent.name}发一条任务`}
+        />
+        <button disabled={sending || !message.trim()} onClick={handleSend}>
+          {sending ? '正在入队…' : '发送任务'}
+        </button>
+        {sendStatus && <p className={`send-status ${sendStatus.type}`} role="status">{sendStatus.text}</p>}
       </div>
     </section>
   );
