@@ -14,6 +14,8 @@ MVP v1：Hermes Office Mobile 已跑通本地最小闭环。
 - 前端发送状态区分“已发送到 Hermes”和“已入队兜底”。
 - 实现长期可用版第二刀：`GET /api/outbox` 展示兜底队列，`POST /api/outbox/retry` 小步重试投递，成功写入 `backend/runtime/sent.jsonl`，失败保留 outbox。
 - 任务动态页增加「兜底队列」模块和「重试 1 条」按钮，避免移动端长时间卡在批量重试。
+- 完成 Marvis Office 风格 UI 第一刀：办公室状态概览、员工工位卡、统一线性 SVG 图标、浅色克制视觉和移动底部导航。
+- 主 UI 移除 emoji 与非统一图标，保留四个 Tab、派活和 outbox 重试数据链路。
 - 完成前端生产构建验证：`npm run build`。
 - 完成后端语法和 API 烟测。
 - 完成 Chrome Headless/CDP 浏览器真实验证：页面加载、Tab 切换、API 请求、派活按钮、outbox 写入。
@@ -33,7 +35,7 @@ MVP v1：Hermes Office Mobile 已跑通本地最小闭环。
 
 1. 增加 outbox 重试/消费机制，恢复后自动补投。
 2. 增加移动端访问方式：Tailscale 内网优先。
-3. 优化视觉：办公室卡片更像「智能员工工位」。
+3. 继续打磨办公室交互：从工位卡快速进入员工详情，并补充最近任务摘要。
 4. 增加 Agent 最近会话和最近任务摘要。
 5. 评估是否把龙虾浏览器资源作为远程 UI 验收节点。
 

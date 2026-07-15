@@ -1,14 +1,15 @@
 # Hermes Office Mobile
 
-移动端 Hermes 可视化办公室，用来管理小黑、小橙、小金三个 AI 员工。
+移动端 Hermes 可视化办公室，用来管理三个 AI 员工。前端采用 Marvis Office 风格的轻量办公空间隐喻：白色与浅米灰底、统一线性 SVG 图标、员工工位卡和克制的信息层级。
 
 ## MVP 闭环
 
-- 办公室首页：展示 Agent 状态。
+- 办公室首页：展示在线、离线、待补投概览，以及带职责信息的员工工位卡。
 - Agent 详情：展示 profile、端口、SOUL.md / AGENT.md 状态。
 - 派活入口：优先把任务发送到对应 Hermes API Server；不可用时写入 `backend/runtime/outbox.jsonl` 兜底。
 - 进化档案：展示最近 Skills 和 profile 人格文件更新时间。
 - 任务动态：展示 Cron 和 gateway 活动。
+- 移动导航：保留办公室、员工、进化、任务四个 Tab，使用统一线性图标和浅蓝选中态。
 
 ## 启动
 
