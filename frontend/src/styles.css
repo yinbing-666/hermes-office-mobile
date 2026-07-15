@@ -100,7 +100,10 @@ p { color: var(--muted); line-height: 1.6; }
 .workstation-callout { left: 50%; bottom: 13px; color: #55748b; border-color: rgba(173, 194, 209, .9); background: rgba(247, 251, 253, .95); transform: translateX(-50%); }
 .workstation-callout::after { left: 50%; bottom: 100%; width: 24px; transform: rotate(-90deg); }
 .workstation-callout::before { left: calc(50% - 3px); bottom: calc(100% + 20px); }
-.seat-callout { box-shadow: 0 3px 10px rgba(65, 69, 70, .1); }
+.seat-callout { appearance: none; pointer-events: auto; cursor: pointer; box-shadow: 0 3px 10px rgba(65, 69, 70, .1); transition: transform 140ms ease, box-shadow 140ms ease, filter 140ms ease; }
+.seat-callout:hover { filter: brightness(.98) saturate(1.06); transform: translateY(-1px); box-shadow: 0 5px 13px rgba(65, 69, 70, .15); }
+.seat-callout:active { filter: brightness(.95); transform: translateY(1px); box-shadow: 0 2px 6px rgba(65, 69, 70, .12); }
+.seat-callout:focus-visible { outline: 2px solid rgba(77, 143, 216, .72); outline-offset: 2px; box-shadow: 0 0 0 3px rgba(231, 242, 255, .9), 0 4px 12px rgba(65, 69, 70, .13); }
 .control-callout { left: 47%; top: 91px; color: #292d31; background: rgba(244, 245, 245, .97); border-color: rgba(49, 54, 58, .88); }
 .control-callout::after { left: 13px; top: 100%; width: 24px; transform: rotate(74deg); }
 .control-callout::before { left: 16px; top: calc(100% + 20px); }

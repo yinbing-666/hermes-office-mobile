@@ -178,7 +178,7 @@ function AgentCard({ agent, active, onClick }: { agent: AgentInfo; active: boole
   );
 }
 
-function VirtualOfficeCard() {
+function VirtualOfficeCard({ onSelectAgent }: { onSelectAgent: (agentId: string) => void }) {
   return (
     <div className="virtual-office-card" aria-label="虚拟办公室空间示意">
       <div className="virtual-office-heading">
@@ -234,9 +234,9 @@ function VirtualOfficeCard() {
           <span className="office-callout zone-callout kitchen-callout">茶水区 / 厨房</span>
           <span className="office-callout zone-callout fitness-callout">健身区 / 跑步机</span>
           <span className="office-callout zone-callout workstation-callout">办公工位区</span>
-          <span className="office-callout seat-callout control-callout">主控位 · 小黑</span>
-          <span className="office-callout seat-callout content-callout">内容位 · 小橙</span>
-          <span className="office-callout seat-callout business-callout">商业位 · 小金</span>
+          <button type="button" className="office-callout seat-callout control-callout" onClick={() => onSelectAgent('default')}>主控位 · 小黑</button>
+          <button type="button" className="office-callout seat-callout content-callout" onClick={() => onSelectAgent('media-ops')}>内容位 · 小橙</button>
+          <button type="button" className="office-callout seat-callout business-callout" onClick={() => onSelectAgent('investor')}>商业位 · 小金</button>
         </div>
       </div>
     </div>
@@ -294,7 +294,7 @@ function ResourceTaskOverview({ tasks }: { tasks: TaskItem[] }) {
   );
 }
 
-function OfficePage({ agents, tasks, selectedId, setSelectedId, pending, backendOffline, installPrompt, installed, onInstall }: { agents: AgentInfo[]; tasks: TaskItem[]; selectedId: string; setSelectedId: (id: string) => void; pending: number; backendOffline: boolean; installPrompt: BeforeInstallPromptEvent | null; installed: boolean; onInstall: () => void }) {
+function OfficePage({ agents, tasks, selectedId, setSelectedId, onSelectAgent, pending, backendOffline, installPrompt, installed, onInstall }: { agents: AgentInfo[]; tasks: TaskItem[]; selectedId: string; setSelectedId: (id: string) => void; onSelectAgent: (agentId: string) => void; pending: number; backendOffline: boolean; installPrompt: BeforeInstallPromptEvent | null; installed: boolean; onInstall: () => void }) {
   const online = agents.filter((agent) => agent.status === 'online').length;
   const offline = Math.max(agents.length - online, 0);
   return (
@@ -314,7 +314,7 @@ function OfficePage({ agents, tasks, selectedId, setSelectedId, pending, backend
           <div><span className="metric-dot pending" /><strong>{pending}</strong><small>待补投</small></div>
         </div>
       </div>
-      <VirtualOfficeCard />
+      <VirtualOfficeCard onSelectAgent={onSelectAgent} />
       <ResourceTaskOverview tasks={tasks} />
       <MobileAccessCard installPrompt={installPrompt} installed={installed} onInstall={onInstall} />
       <div className="section-heading">
@@ -788,7 +788,11 @@ export default function App() {
   useEffect(() => {
     Promise.all([fetchAgents(), fetchEvolution(), fetchTasks(), fetchOutbox()]).then(([agentRes, evolutionRes, taskRes, outboxRes]) => {
       setAgents(agentRes.data.agents);
-      setSelectedId(agentRes.data.agents[0]?.id ?? 'default');
+      setSelectedId((current) => (
+        current && agentRes.data.agents.some((agent) => agent.id === current)
+          ? current
+          : agentRes.data.agents[0]?.id ?? 'default'
+      ));
       setEvolution(evolutionRes.data);
       setTasks(taskRes.data.items ?? []);
       setOutbox(outboxRes.data);
@@ -905,6 +909,14 @@ export default function App() {
     window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
   }
 
+  function handleSelectAgentFromOffice(agentId: string) {
+    setSelectedId(agentId);
+    setTab('agent');
+    const url = new URL(window.location.href);
+    url.searchParams.set('view', 'agent');
+    window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
+  }
+
   const pageTitle = tabs.find((item) => item.key === tab)?.label ?? '办公室';
 
   return (
@@ -917,7 +929,7 @@ export default function App() {
         <div className={`connection-state ${offline ? 'offline' : ''}`}><span />{offline ? '离线数据' : '已连接'}</div>
       </header>
       <OfflineBanner show={offline} />
-      {tab === 'office' && <OfficePage agents={agents} tasks={tasks} selectedId={selectedId} setSelectedId={setSelectedId} pending={outbox.count} backendOffline={offline} installPrompt={installPrompt} installed={installed} onInstall={handleInstall} />}
+      {tab === 'office' && <OfficePage agents={agents} tasks={tasks} selectedId={selectedId} setSelectedId={setSelectedId} onSelectAgent={handleSelectAgentFromOffice} pending={outbox.count} backendOffline={offline} installPrompt={installPrompt} installed={installed} onInstall={handleInstall} />}
       {tab === 'agent' && <AgentPage agent={selectedAgent} tasks={tasks} evolution={evolution} />}
       {tab === 'evolution' && <EvolutionPage evolution={evolution} />}
       {tab === 'activity' && <ActivityPage tasks={tasks} outbox={outbox} onRetryOutbox={handleRetryOutbox} retryStatus={retryStatus} retrying={retrying} autoRetryEnabled={autoRetryEnabled} autoRetryReport={autoRetryReport} onToggleAutoRetry={handleToggleAutoRetry} />}
