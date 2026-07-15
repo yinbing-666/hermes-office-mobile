@@ -5,10 +5,32 @@ import type { AgentInfo, EvolutionData, OutboxData, TaskItem, TaskStatus } from 
 
 type Tab = 'office' | 'agent' | 'evolution' | 'activity';
 
-const roleMap: Record<string, { role: string; focus: string; tone: string; avatar: string }> = {
-  default: { role: '主控与知识系统', focus: '调度专家团、维护知识库、派发开发任务', tone: 'slate', avatar: '/avatars/default.png' },
-  'media-ops': { role: '内容与媒体运营', focus: '负责选题、内容改写与多平台分发', tone: 'blue', avatar: '/avatars/media-ops.png' },
-  investor: { role: '商业与投资分析', focus: '负责定价、商业模式与收益风险判断', tone: 'sand', avatar: '/avatars/investor.png' },
+type RoleMeta = { role: string; focus: string; tone: string; avatar: string; tags: string[] };
+
+const fallbackRole: RoleMeta = { role: 'Hermes Agent', focus: '自定义智能员工', tone: 'blue', avatar: '', tags: ['任务执行', '协作响应'] };
+
+const roleMap: Record<string, RoleMeta> = {
+  default: {
+    role: '主控与知识系统',
+    focus: '调度专家团、维护知识库、派发开发任务',
+    tone: 'slate',
+    avatar: '/avatars/default.png',
+    tags: ['知识库维护', '专家团调度', 'Codex派发', '浏览器验收'],
+  },
+  'media-ops': {
+    role: '内容与媒体运营',
+    focus: '负责选题、内容改写与多平台分发',
+    tone: 'blue',
+    avatar: '/avatars/media-ops.png',
+    tags: ['内容选题', '视频理解', '多平台分发', '文案改写'],
+  },
+  investor: {
+    role: '商业与投资分析',
+    focus: '负责定价、商业模式与收益风险判断',
+    tone: 'sand',
+    avatar: '/avatars/investor.png',
+    tags: ['商业分析', 'ROI判断', '定价策略', '风险评估'],
+  },
 };
 
 const tabs: Array<{ key: Tab; label: string; icon: OfficeIconName }> = [
@@ -54,7 +76,7 @@ function AgentPortrait({ tone, avatar, name, large = false }: { tone: string; av
 }
 
 function AgentCard({ agent, active, onClick }: { agent: AgentInfo; active: boolean; onClick: () => void }) {
-  const meta = roleMap[agent.id] ?? { role: 'Hermes Agent', focus: '自定义智能员工', tone: 'blue', avatar: '' };
+  const meta = roleMap[agent.id] ?? fallbackRole;
   return (
     <button className={`workstation-card ${active ? 'active' : ''}`} onClick={onClick}>
       <div className="desk-scene">
@@ -113,10 +135,24 @@ function OfficePage({ agents, selectedId, setSelectedId, pending }: { agents: Ag
   );
 }
 
-function AgentPage({ agent }: { agent?: AgentInfo }) {
+function AgentPage({ agent, tasks, evolution }: { agent?: AgentInfo; tasks: TaskItem[]; evolution: EvolutionData }) {
   const [message, setMessage] = useState('');
   const [sending, setSending] = useState(false);
   const [sendStatus, setSendStatus] = useState<{ type: 'sent' | 'error'; text: string } | null>(null);
+  const recentTasks = useMemo(() => {
+    if (!agent) return [];
+    return tasks
+      .filter((task) => task.agent_id === agent.id)
+      .map((task, index) => ({ task, index }))
+      .sort((left, right) => {
+        const leftTime = left.task.time ? new Date(left.task.time).getTime() : 0;
+        const rightTime = right.task.time ? new Date(right.task.time).getTime() : 0;
+        const timeDifference = (Number.isNaN(rightTime) ? 0 : rightTime) - (Number.isNaN(leftTime) ? 0 : leftTime);
+        return timeDifference || left.index - right.index;
+      })
+      .slice(0, 5)
+      .map(({ task }) => task);
+  }, [agent, tasks]);
 
   useEffect(() => {
     setMessage('');
@@ -124,7 +160,16 @@ function AgentPage({ agent }: { agent?: AgentInfo }) {
   }, [agent?.id]);
 
   if (!agent) return <div className="empty-card">暂无 Agent 数据。</div>;
-  const meta = roleMap[agent.id] ?? { role: 'Hermes Agent', focus: '自定义智能员工', tone: 'blue', avatar: '' };
+  const meta = roleMap[agent.id] ?? fallbackRole;
+  const evolutionProfile = evolution.profiles?.find((profile) => profile.profile === agent.id);
+  const soul = evolutionProfile?.soul ?? agent.soul;
+  const agentGuide = evolutionProfile?.agent ?? agent.agent;
+  const latestTask = recentTasks[0];
+  const latestTaskMeta = latestTask ? taskStatusMeta[latestTask.status] : null;
+  const portListening = agent.port_listening ?? agent.status === 'online';
+  const latestProfileUpdate = [soul?.modified_at, agentGuide?.modified_at]
+    .filter((value): value is string => Boolean(value))
+    .sort((left, right) => new Date(right).getTime() - new Date(left).getTime())[0];
 
   async function handleSend() {
     const task = message.trim();
@@ -147,20 +192,77 @@ function AgentPage({ agent }: { agent?: AgentInfo }) {
 
   return (
     <section className="page-section">
-      <div className="detail-card">
-        <AgentPortrait tone={meta.tone} avatar={meta.avatar} name={agent.name} large />
-        <div className="detail-name">
-          <h2>{agent.name}</h2>
-          <StatusPill status={agent.status} />
+      <div className="detail-card employee-hero">
+        <div className="employee-identity">
+          <AgentPortrait tone={meta.tone} avatar={meta.avatar} name={agent.name} large />
+          <div>
+            <p className="eyebrow">Employee Profile</p>
+            <div className="detail-name">
+              <h2>{agent.name}</h2>
+              <StatusPill status={agent.status} />
+            </div>
+            <p>{meta.role}</p>
+            <small>{meta.focus}</small>
+          </div>
         </div>
-        <p>{meta.role}</p>
-        <small>{meta.focus}</small>
+        <div className="capability-tags" aria-label={`${agent.name}能力标签`}>
+          {meta.tags.map((tag) => <span key={tag}>{tag}</span>)}
+        </div>
       </div>
-      <div className="info-grid">
-        <div className="info-card"><span>Profile</span><strong>{agent.id}</strong></div>
-        <div className="info-card"><span>端口</span><strong>{agent.port ?? '未配置'}</strong></div>
-        <div className="info-card"><span>SOUL.md</span><strong>{agent.soul?.present ? '存在' : '暂无'}</strong><small>{formatTime(agent.soul?.modified_at)}</small></div>
-        <div className="info-card"><span>AGENT.md</span><strong>{agent.agent?.present ? '存在' : '暂无'}</strong><small>{formatTime(agent.agent?.modified_at)}</small></div>
+
+      <div className="employee-section-card">
+        <div className="employee-section-head">
+          <div className="employee-section-icon"><OfficeIcon name="monitor" size={18} /></div>
+          <div><span>Current Status</span><h3>当前状态</h3></div>
+        </div>
+        <div className="employee-status-grid">
+          <div><span>连接状态</span><strong className={agent.status === 'online' ? 'status-online' : 'status-offline'}>{agent.status === 'online' ? '在线' : '离线'}</strong><small>{portListening ? '服务端口可连接' : '等待服务恢复'}</small></div>
+          <div><span>服务端口</span><strong>{agent.port ?? '未配置'}</strong><small>{agent.port ? `Profile · ${agent.id}` : '尚未登记端口'}</small></div>
+          <div><span>最近任务</span><strong>{latestTaskMeta?.label ?? '待记录'}</strong><small>{latestTask?.title ?? '暂无该员工任务'}</small></div>
+        </div>
+      </div>
+
+      <div className="employee-section-card">
+        <div className="employee-section-head">
+          <div className="employee-section-icon"><OfficeIcon name="activity" size={18} /></div>
+          <div><span>Recent Tasks</span><h3>最近任务</h3></div>
+          <small>{recentTasks.length > 0 ? `最近 ${recentTasks.length} 条` : '待记录'}</small>
+        </div>
+        {recentTasks.length > 0 ? (
+          <div className="agent-task-list">
+            {recentTasks.map((task) => {
+              const taskMeta = taskStatusMeta[task.status];
+              return (
+                <div className="agent-task-item" key={task.id}>
+                  <div className={`task-check ${task.status}`}><OfficeIcon name={taskMeta.icon} size={15} /></div>
+                  <div>
+                    <div><strong>{task.title}</strong><span className={`task-status ${task.status}`}>{taskMeta.label}</span></div>
+                    <p>{task.detail || task.fallback_reason || '任务详情待补充'}</p>
+                    <small>{taskSourceLabels[task.source] ?? task.source} · {formatTime(task.time)}</small>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ) : <div className="agent-empty-state"><OfficeIcon name="clock" size={18} /><span>最近任务待记录</span></div>}
+      </div>
+
+      <div className="employee-section-card">
+        <div className="employee-section-head">
+          <div className="employee-section-icon"><OfficeIcon name="file" size={18} /></div>
+          <div><span>Work Assets</span><h3>最近产出与档案</h3></div>
+          <small>{latestProfileUpdate ? `更新于 ${formatTime(latestProfileUpdate)}` : '尚未更新'}</small>
+        </div>
+        <div className="employee-assets-grid">
+          <div className={soul?.present ? 'ready' : ''}>
+            <span className="asset-icon"><OfficeIcon name="user" size={18} /></span>
+            <div><strong>人格档案</strong><p>角色边界、沟通风格与长期偏好</p><small>{soul?.present ? `SOUL.md · 已归档 · ${formatTime(soul.modified_at)}` : 'SOUL.md · 待建立档案'}</small></div>
+          </div>
+          <div className={agentGuide?.present ? 'ready' : ''}>
+            <span className="asset-icon"><OfficeIcon name="terminal" size={18} /></span>
+            <div><strong>执行手册</strong><p>工作流程、工具约束与交付标准</p><small>{agentGuide?.present ? `AGENT.md · 已归档 · ${formatTime(agentGuide.modified_at)}` : 'AGENT.md · 待建立手册'}</small></div>
+          </div>
+        </div>
       </div>
       <div className="compose-card">
         <div className="card-title-row">
@@ -457,7 +559,7 @@ export default function App() {
       </header>
       <OfflineBanner show={offline} />
       {tab === 'office' && <OfficePage agents={agents} selectedId={selectedId} setSelectedId={setSelectedId} pending={outbox.count} />}
-      {tab === 'agent' && <AgentPage agent={selectedAgent} />}
+      {tab === 'agent' && <AgentPage agent={selectedAgent} tasks={tasks} evolution={evolution} />}
       {tab === 'evolution' && <EvolutionPage evolution={evolution} />}
       {tab === 'activity' && <ActivityPage tasks={tasks} outbox={outbox} onRetryOutbox={handleRetryOutbox} retryStatus={retryStatus} retrying={retrying} />}
       <nav className="tabbar" aria-label="主导航">

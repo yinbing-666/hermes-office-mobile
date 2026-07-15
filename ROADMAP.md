@@ -22,6 +22,7 @@ MVP v1：Hermes Office Mobile 已跑通本地最小闭环。
 - 成功派活和 outbox 重试成功均写入 `backend/runtime/sent.jsonl`；sent 文件缺失时按空历史返回。
 - 主 UI 移除 emoji 与非统一图标，保留四个 Tab、派活和 outbox 重试数据链路。
 - 使用 Dragon Image2 生成并接入小黑、小橙、小金三位员工头像，替换临时 SVG 占位图。
+- 补全 Agent 员工档案：增加角色能力标签、在线/离线与端口状态、最近任务状态摘要、按员工匹配的最近 5 条任务，并将 SOUL.md / AGENT.md 产品化为“人格档案 / 执行手册”。
 - 完成前端生产构建验证：`npm run build`。
 - 完成后端语法和 API 烟测。
 - 完成 Chrome Headless/CDP 浏览器真实验证：页面加载、Tab 切换、API 请求、派活按钮、outbox 写入。
@@ -42,8 +43,8 @@ MVP v1：Hermes Office Mobile 已跑通本地最小闭环。
 
 1. 增加 outbox 自动消费机制，恢复后自动补投。
 2. 增加移动端访问方式：Tailscale 内网优先。
-3. 继续打磨办公室交互：从工位卡快速进入员工详情，并补充最近任务摘要。
-4. 增加 Agent 最近会话和最近任务摘要。
+3. 继续打磨办公室交互：从工位卡快速进入员工详情。
+4. 增加 Agent 最近会话摘要。
 5. 评估是否把龙虾浏览器资源作为远程 UI 验收节点。
 
 ## 暂不做
