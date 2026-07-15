@@ -676,6 +676,7 @@ const taskSourceLabels: Record<string, string> = { cron: '定时任务', outbox:
 
 function ActivityPage({ tasks, outbox, onExpertPanelSubmit, onRetryOutbox, retryStatus, retrying, autoRetryEnabled, autoRetryReport, onToggleAutoRetry }: { tasks: TaskItem[]; outbox: OutboxData; onExpertPanelSubmit: (question: string) => Promise<ExpertDeliveryResult[]>; onRetryOutbox: () => void; retryStatus: string; retrying: boolean; autoRetryEnabled: boolean; autoRetryReport: AutoRetryReport; onToggleAutoRetry: () => void }) {
   const [filter, setFilter] = useState<TaskFilter>('all');
+  const [selectedTask, setSelectedTask] = useState<TaskItem | null>(null);
   const [expertQuestion, setExpertQuestion] = useState('');
   const [expertSubmitting, setExpertSubmitting] = useState(false);
   const [expertResults, setExpertResults] = useState<ExpertDeliveryResult[]>([]);
@@ -687,6 +688,10 @@ function ActivityPage({ tasks, outbox, onExpertPanelSubmit, onRetryOutbox, retry
     if (filter === 'interrupted') return task.status === 'failed' || task.status === 'paused';
     return task.status === filter;
   });
+  const selectedTaskMeta = selectedTask ? taskStatusMeta[selectedTask.status] : null;
+  const selectedTaskCanRetry = selectedTask
+    ? selectedTask.source === 'outbox' || selectedTask.status === 'queued' || selectedTask.status === 'failed' || selectedTask.status === 'paused'
+    : false;
 
   async function handleExpertSubmit() {
     const question = expertQuestion.trim();
@@ -808,10 +813,57 @@ function ActivityPage({ tasks, outbox, onExpertPanelSubmit, onRetryOutbox, retry
       </div>
 
       <div className="section-heading"><div><p className="section-kicker">Unified History</p><h2>统一任务历史</h2></div><span>{filteredTasks.length} 项</span></div>
+      {selectedTask && selectedTaskMeta ? (
+        <aside className="task-detail-panel" id="task-detail-panel" aria-label="任务详情">
+          <div className="task-detail-heading">
+            <div className={`task-check ${selectedTask.status}`}><OfficeIcon name={selectedTaskMeta.icon} size={17} /></div>
+            <div>
+              <p>任务详情</p>
+              <strong>{selectedTask.title}</strong>
+            </div>
+            <button className="task-detail-close" type="button" onClick={() => setSelectedTask(null)} aria-label="关闭任务详情">关闭</button>
+          </div>
+          <div className="task-detail-grid">
+            <div><span>状态</span><strong className={`task-status ${selectedTask.status}`}>{selectedTaskMeta.label}</strong></div>
+            <div><span>来源</span><strong>{taskSourceLabels[selectedTask.source] ?? selectedTask.source}</strong></div>
+            <div><span>员工</span><strong>{selectedTask.agent_id ? formatAgentName(selectedTask.agent_id) : '未指定'}</strong></div>
+            <div><span>时间</span><strong>{formatTime(selectedTask.time)}</strong></div>
+          </div>
+          <div className="task-detail-section">
+            <span>任务详情</span>
+            <p>{selectedTask.detail ? formatIssueReason(selectedTask.detail) : '暂无任务详情'}</p>
+          </div>
+          <div className="task-detail-section">
+            <span>业务化失败原因</span>
+            <p>{selectedTask.fallback_reason ? formatIssueReason(selectedTask.fallback_reason) : '未记录失败原因'}</p>
+          </div>
+          <div className="task-detail-section technical">
+            <span>技术信息</span>
+            <p>{formatTaskTechnicalMeta(selectedTask) || '暂无技术信息'}</p>
+          </div>
+          <div className="task-detail-id"><span>任务 ID</span><code>{selectedTask.id}</code></div>
+          {selectedTaskCanRetry ? (
+            <div className="task-detail-retry">
+              <div><strong>可通过兜底队列逐条重试</strong><small>每次仅尝试补投 1 条现有队列任务</small></div>
+              <button className="mini-button" type="button" onClick={onRetryOutbox} disabled={retrying || outbox.count === 0}>
+                <OfficeIcon name="refresh" size={15} />
+                {retrying ? '重试中…' : '逐条重试'}
+              </button>
+            </div>
+          ) : null}
+        </aside>
+      ) : null}
       <div className="task-card-list">
         {filteredTasks.length === 0 ? <div className="empty-card">当前筛选下暂无任务。</div> : filteredTasks.map((task) => {
           const meta = taskStatusMeta[task.status];
-          return <div className="task-card" key={task.id}>
+          return <button
+            className={`task-card ${selectedTask?.id === task.id ? 'selected' : ''}`}
+            key={task.id}
+            type="button"
+            onClick={() => setSelectedTask(task)}
+            aria-expanded={selectedTask?.id === task.id}
+            aria-controls="task-detail-panel"
+          >
             <div className={`task-check ${task.status}`}><OfficeIcon name={meta.icon} size={16} /></div>
             <div className="task-card-content">
               <div><strong>{task.title}</strong><span className={`task-status ${task.status}`}>{meta.label}</span></div>
@@ -819,7 +871,7 @@ function ActivityPage({ tasks, outbox, onExpertPanelSubmit, onRetryOutbox, retry
               <small>{taskSourceLabels[task.source] ?? task.source}{task.agent_id ? ` · ${formatAgentName(task.agent_id)}` : ''} · {formatTime(task.time)}{formatTaskTechnicalMeta(task) ? ` · ${formatTaskTechnicalMeta(task)}` : ''}</small>
             </div>
             <OfficeIcon name="chevron" size={17} className="task-chevron" />
-          </div>;
+          </button>;
         })}
       </div>
     </section>
