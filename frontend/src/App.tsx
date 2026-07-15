@@ -5,10 +5,10 @@ import type { ActivityItem, AgentInfo, CronJob, EvolutionData, OutboxData } from
 
 type Tab = 'office' | 'agent' | 'evolution' | 'activity';
 
-const roleMap: Record<string, { role: string; focus: string; tone: string }> = {
-  default: { role: '主控与知识系统', focus: '调度专家团、维护知识库、派发开发任务', tone: 'slate' },
-  'media-ops': { role: '内容与媒体运营', focus: '负责选题、内容改写与多平台分发', tone: 'blue' },
-  investor: { role: '商业与投资分析', focus: '负责定价、商业模式与收益风险判断', tone: 'sand' },
+const roleMap: Record<string, { role: string; focus: string; tone: string; avatar: string }> = {
+  default: { role: '主控与知识系统', focus: '调度专家团、维护知识库、派发开发任务', tone: 'slate', avatar: '/avatars/default.png' },
+  'media-ops': { role: '内容与媒体运营', focus: '负责选题、内容改写与多平台分发', tone: 'blue', avatar: '/avatars/media-ops.png' },
+  investor: { role: '商业与投资分析', focus: '负责定价、商业模式与收益风险判断', tone: 'sand', avatar: '/avatars/investor.png' },
 };
 
 const tabs: Array<{ key: Tab; label: string; icon: OfficeIconName }> = [
@@ -45,20 +45,16 @@ function OfflineBanner({ show }: { show: boolean }) {
   );
 }
 
-function AgentPortrait({ tone, large = false }: { tone: string; large?: boolean }) {
+function AgentPortrait({ tone, avatar, name, large = false }: { tone: string; avatar?: string; name: string; large?: boolean }) {
   return (
-    <div className={`agent-portrait tone-${tone} ${large ? 'large' : ''}`} aria-hidden="true">
-      <span className="portrait-head">
-        <span />
-        <span />
-      </span>
-      <span className="portrait-body" />
+    <div className={`agent-portrait tone-${tone} ${large ? 'large' : ''}`}>
+      {avatar ? <img src={avatar} alt={`${name}头像`} loading="lazy" /> : <OfficeIcon name="agent" size={large ? 36 : 26} />}
     </div>
   );
 }
 
 function AgentCard({ agent, active, onClick }: { agent: AgentInfo; active: boolean; onClick: () => void }) {
-  const meta = roleMap[agent.id] ?? { role: 'Hermes Agent', focus: '自定义智能员工', tone: 'blue' };
+  const meta = roleMap[agent.id] ?? { role: 'Hermes Agent', focus: '自定义智能员工', tone: 'blue', avatar: '' };
   return (
     <button className={`workstation-card ${active ? 'active' : ''}`} onClick={onClick}>
       <div className="desk-scene">
@@ -66,7 +62,7 @@ function AgentCard({ agent, active, onClick }: { agent: AgentInfo; active: boole
           <OfficeIcon name="monitor" size={35} />
           <span className={`monitor-signal ${agent.status === 'online' ? 'online' : ''}`} />
         </div>
-        <AgentPortrait tone={meta.tone} />
+        <AgentPortrait tone={meta.tone} avatar={meta.avatar} name={agent.name} />
       </div>
       <div className="agent-main">
         <div className="agent-row">
@@ -128,7 +124,7 @@ function AgentPage({ agent }: { agent?: AgentInfo }) {
   }, [agent?.id]);
 
   if (!agent) return <div className="empty-card">暂无 Agent 数据。</div>;
-  const meta = roleMap[agent.id] ?? { role: 'Hermes Agent', focus: '自定义智能员工', tone: 'blue' };
+  const meta = roleMap[agent.id] ?? { role: 'Hermes Agent', focus: '自定义智能员工', tone: 'blue', avatar: '' };
 
   async function handleSend() {
     const task = message.trim();
@@ -152,7 +148,7 @@ function AgentPage({ agent }: { agent?: AgentInfo }) {
   return (
     <section className="page-section">
       <div className="detail-card">
-        <AgentPortrait tone={meta.tone} large />
+        <AgentPortrait tone={meta.tone} avatar={meta.avatar} name={agent.name} large />
         <div className="detail-name">
           <h2>{agent.name}</h2>
           <StatusPill status={agent.status} />

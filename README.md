@@ -4,7 +4,7 @@
 
 ## MVP 闭环
 
-- 办公室首页：展示在线、离线、待补投概览，以及带职责信息的员工工位卡。
+- 办公室首页：展示在线、离线、待补投概览，以及带 Dragon Image2 头像和职责信息的员工工位卡。
 - Agent 详情：展示 profile、端口、SOUL.md / AGENT.md 状态。
 - 派活入口：优先把任务发送到对应 Hermes API Server；不可用时写入 `backend/runtime/outbox.jsonl` 兜底。
 - 进化档案：以成长概览、能力矩阵、最近进化时间线和员工档案卡展示 `evolution.skills` / `evolution.profiles` 的真实记录；缺失项明确显示暂无或待记录。

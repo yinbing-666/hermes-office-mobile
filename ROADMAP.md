@@ -18,6 +18,7 @@ MVP v1：Hermes Office Mobile 已跑通本地最小闭环。
 - 完成 Marvis Office 风格 UI 第二刀：进化档案升级为产品化成长档案，包含成长概览、能力矩阵、最近进化时间线和三位员工的人格文件状态卡。
 - 任务动态升级为移动任务清单：增加进行中、已完成、待补投统计，保留 outbox「重试 1 条」，Cron 改为任务卡片，Gateway 日志降级为折叠最近事件。
 - 主 UI 移除 emoji 与非统一图标，保留四个 Tab、派活和 outbox 重试数据链路。
+- 使用 Dragon Image2 生成并接入小黑、小橙、小金三位员工头像，替换临时 SVG 占位图。
 - 完成前端生产构建验证：`npm run build`。
 - 完成后端语法和 API 烟测。
 - 完成 Chrome Headless/CDP 浏览器真实验证：页面加载、Tab 切换、API 请求、派活按钮、outbox 写入。
