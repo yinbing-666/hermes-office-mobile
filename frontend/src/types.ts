@@ -1,0 +1,53 @@
+export type AgentId = 'default' | 'media-ops' | 'investor' | string;
+
+export interface AgentInfo {
+  id: AgentId;
+  name: string;
+  profile_available?: boolean;
+  status: 'online' | 'offline' | 'busy' | string;
+  port?: number;
+  port_listening?: boolean;
+  soul?: FileMeta;
+  agent?: FileMeta;
+}
+
+export interface FileMeta {
+  present: boolean;
+  modified_at: string | null;
+  size_bytes: number | null;
+}
+
+export interface ActivityItem {
+  id: number | string;
+  message: string;
+}
+
+export interface CronJob {
+  id: string;
+  name: string;
+  enabled: boolean;
+  status: string;
+  schedule?: string | null;
+  next_run_at?: string | null;
+  last_run_at?: string | null;
+}
+
+export interface EvolutionData {
+  skills?: {
+    available: boolean;
+    count: number;
+    recent: Array<{ name: string; modified_at: string | null }>;
+  };
+  profiles?: Array<{
+    profile: string;
+    name: string;
+    profile_available: boolean;
+    soul: FileMeta;
+    agent: FileMeta;
+  }>;
+}
+
+export interface ApiState<T> {
+  data: T;
+  offline: boolean;
+}

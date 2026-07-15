@@ -1,0 +1,47 @@
+import type { ActivityItem, AgentInfo, ApiState, CronJob, EvolutionData } from './types';
+
+const mockAgents: AgentInfo[] = [
+  { id: 'default', name: '小黑', status: 'online', port: 8642, port_listening: true, profile_available: true },
+  { id: 'media-ops', name: '小橙', status: 'online', port: 8650, port_listening: true, profile_available: true },
+  { id: 'investor', name: '小金', status: 'offline', port: 8660, port_listening: false, profile_available: true },
+];
+
+const mockActivity: ActivityItem[] = [
+  { id: 1, message: '离线模拟：专家团已完成一次定价分析。' },
+  { id: 2, message: '离线模拟：Cron 状态等待后端连接。' },
+];
+
+const mockEvolution: EvolutionData = {
+  skills: { available: false, count: 0, recent: [{ name: '离线模拟：等待读取 skills 目录', modified_at: null }] },
+  profiles: [],
+};
+
+const mockCron: CronJob[] = [
+  { id: 'mock-1', name: '离线模拟：每日晨报', enabled: true, status: 'unknown', schedule: '0 8 * * *' },
+];
+
+async function getJson<T>(url: string, fallback: T): Promise<ApiState<T>> {
+  try {
+    const response = await fetch(url, { headers: { Accept: 'application/json' } });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    return { data: await response.json() as T, offline: false };
+  } catch {
+    return { data: fallback, offline: true };
+  }
+}
+
+export function fetchAgents() {
+  return getJson<{ agents: AgentInfo[] }>('/api/agents', { agents: mockAgents });
+}
+
+export function fetchActivity() {
+  return getJson<{ items?: ActivityItem[]; events?: ActivityItem[] }>('/api/activity', { items: mockActivity });
+}
+
+export function fetchEvolution() {
+  return getJson<EvolutionData>('/api/evolution', mockEvolution);
+}
+
+export function fetchCron() {
+  return getJson<{ jobs: CronJob[]; total?: number; enabled?: number }>('/api/cron', { jobs: mockCron, total: 1, enabled: 1 });
+}
