@@ -4,6 +4,10 @@ import { OfficeIcon, type OfficeIconName } from './components/OfficeIcon';
 import type { AgentInfo, EvolutionData, OutboxData, TaskItem, TaskStatus } from './types';
 
 type Tab = 'office' | 'agent' | 'evolution' | 'activity';
+type BeforeInstallPromptEvent = Event & {
+  prompt: () => Promise<void>;
+  userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }>;
+};
 
 type RoleMeta = { role: string; focus: string; tone: string; avatar: string; tags: string[] };
 
@@ -62,8 +66,29 @@ function OfflineBanner({ show }: { show: boolean }) {
   return (
     <div className="offline-banner">
       <OfficeIcon name="alert" size={17} />
-      <span>当前显示离线模拟数据，后端连接后会自动切换真实状态。</span>
+      <span><strong>后端暂时离线。</strong> 当前显示离线缓存或模拟数据，仍可继续浏览；连接恢复后会自动切换真实状态。</span>
     </div>
+  );
+}
+
+function MobileAccessCard({ installPrompt, installed, onInstall }: { installPrompt: BeforeInstallPromptEvent | null; installed: boolean; onInstall: () => void }) {
+  const isIos = typeof navigator !== 'undefined' && /iphone|ipad|ipod/i.test(navigator.userAgent);
+  const installHint = installed
+    ? '已从主屏幕运行，可像普通 App 一样继续使用。'
+    : isIos
+      ? '在 Safari 点“分享”，再选“添加到主屏幕”。'
+      : '也可在浏览器菜单中选择“添加到主屏幕”。';
+
+  return (
+    <aside className="mobile-access-card" aria-label="手机访问说明">
+      <div className="mobile-access-icon"><OfficeIcon name="monitor" size={18} /></div>
+      <div>
+        <strong>手机访问</strong>
+        <p>同一 Tailnet 打开 <code>http://100.99.196.3:5176/</code></p>
+        <small>{installHint}</small>
+      </div>
+      {installPrompt && !installed ? <button onClick={onInstall}>安装</button> : null}
+    </aside>
   );
 }
 
@@ -99,7 +124,7 @@ function AgentCard({ agent, active, onClick }: { agent: AgentInfo; active: boole
   );
 }
 
-function OfficePage({ agents, selectedId, setSelectedId, pending }: { agents: AgentInfo[]; selectedId: string; setSelectedId: (id: string) => void; pending: number }) {
+function OfficePage({ agents, selectedId, setSelectedId, pending, backendOffline, installPrompt, installed, onInstall }: { agents: AgentInfo[]; selectedId: string; setSelectedId: (id: string) => void; pending: number; backendOffline: boolean; installPrompt: BeforeInstallPromptEvent | null; installed: boolean; onInstall: () => void }) {
   const online = agents.filter((agent) => agent.status === 'online').length;
   const offline = Math.max(agents.length - online, 0);
   return (
@@ -119,6 +144,7 @@ function OfficePage({ agents, selectedId, setSelectedId, pending }: { agents: Ag
           <div><span className="metric-dot pending" /><strong>{pending}</strong><small>待补投</small></div>
         </div>
       </div>
+      <MobileAccessCard installPrompt={installPrompt} installed={installed} onInstall={onInstall} />
       <div className="section-heading">
         <div>
           <p className="section-kicker">Office Floor</p>
@@ -127,7 +153,12 @@ function OfficePage({ agents, selectedId, setSelectedId, pending }: { agents: Ag
         <span>{agents.length} 位员工</span>
       </div>
       <div className="agent-list">
-        {agents.map((agent) => (
+        {agents.length === 0 ? (
+          <div className="empty-card offline-empty">
+            <OfficeIcon name={backendOffline ? 'alert' : 'agent'} size={19} />
+            <span>{backendOffline ? '后端离线且暂无缓存数据，其他页面仍可继续浏览。' : '暂无员工数据。'}</span>
+          </div>
+        ) : agents.map((agent) => (
           <AgentCard key={agent.id} agent={agent} active={agent.id === selectedId} onClick={() => setSelectedId(agent.id)} />
         ))}
       </div>
@@ -506,7 +537,10 @@ function ActivityPage({ tasks, outbox, onRetryOutbox, retryStatus, retrying }: {
 }
 
 export default function App() {
-  const [tab, setTab] = useState<Tab>('office');
+  const [tab, setTab] = useState<Tab>(() => {
+    const view = new URLSearchParams(window.location.search).get('view');
+    return tabs.some((item) => item.key === view) ? view as Tab : 'office';
+  });
   const [agents, setAgents] = useState<AgentInfo[]>([]);
   const [selectedId, setSelectedId] = useState('default');
   const [evolution, setEvolution] = useState<EvolutionData>({});
@@ -515,6 +549,8 @@ export default function App() {
   const [retrying, setRetrying] = useState(false);
   const [retryStatus, setRetryStatus] = useState('');
   const [offline, setOffline] = useState(false);
+  const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null);
+  const [installed, setInstalled] = useState(() => window.matchMedia('(display-mode: standalone)').matches || Boolean((navigator as Navigator & { standalone?: boolean }).standalone));
 
   useEffect(() => {
     Promise.all([fetchAgents(), fetchEvolution(), fetchTasks(), fetchOutbox()]).then(([agentRes, evolutionRes, taskRes, outboxRes]) => {
@@ -525,6 +561,23 @@ export default function App() {
       setOutbox(outboxRes.data);
       setOffline(agentRes.offline || evolutionRes.offline || taskRes.offline || outboxRes.offline);
     });
+  }, []);
+
+  useEffect(() => {
+    const handleInstallPrompt = (event: Event) => {
+      event.preventDefault();
+      setInstallPrompt(event as BeforeInstallPromptEvent);
+    };
+    const handleInstalled = () => {
+      setInstalled(true);
+      setInstallPrompt(null);
+    };
+    window.addEventListener('beforeinstallprompt', handleInstallPrompt);
+    window.addEventListener('appinstalled', handleInstalled);
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handleInstallPrompt);
+      window.removeEventListener('appinstalled', handleInstalled);
+    };
   }, []);
 
   const selectedAgent = useMemo(() => agents.find((agent) => agent.id === selectedId) ?? agents[0], [agents, selectedId]);
@@ -546,6 +599,22 @@ export default function App() {
     }
   }
 
+  async function handleInstall() {
+    if (!installPrompt) return;
+    await installPrompt.prompt();
+    const choice = await installPrompt.userChoice;
+    if (choice.outcome === 'accepted') setInstalled(true);
+    setInstallPrompt(null);
+  }
+
+  function handleTabChange(nextTab: Tab) {
+    setTab(nextTab);
+    const url = new URL(window.location.href);
+    if (nextTab === 'office') url.searchParams.delete('view');
+    else url.searchParams.set('view', nextTab);
+    window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
+  }
+
   const pageTitle = tabs.find((item) => item.key === tab)?.label ?? '办公室';
 
   return (
@@ -558,13 +627,13 @@ export default function App() {
         <div className={`connection-state ${offline ? 'offline' : ''}`}><span />{offline ? '离线数据' : '已连接'}</div>
       </header>
       <OfflineBanner show={offline} />
-      {tab === 'office' && <OfficePage agents={agents} selectedId={selectedId} setSelectedId={setSelectedId} pending={outbox.count} />}
+      {tab === 'office' && <OfficePage agents={agents} selectedId={selectedId} setSelectedId={setSelectedId} pending={outbox.count} backendOffline={offline} installPrompt={installPrompt} installed={installed} onInstall={handleInstall} />}
       {tab === 'agent' && <AgentPage agent={selectedAgent} tasks={tasks} evolution={evolution} />}
       {tab === 'evolution' && <EvolutionPage evolution={evolution} />}
       {tab === 'activity' && <ActivityPage tasks={tasks} outbox={outbox} onRetryOutbox={handleRetryOutbox} retryStatus={retryStatus} retrying={retrying} />}
       <nav className="tabbar" aria-label="主导航">
         {tabs.map(({ key, label, icon }) => (
-          <button key={key} className={tab === key ? 'selected' : ''} onClick={() => setTab(key)}>
+          <button key={key} className={tab === key ? 'selected' : ''} onClick={() => handleTabChange(key)}>
             <OfficeIcon name={icon} size={21} />
             <span>{label}</span>
           </button>
