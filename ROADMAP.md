@@ -2,17 +2,19 @@
 
 ## 当前阶段
 
-MVP v1：Hermes Office Mobile 已跑通本地最小闭环，并进入“专家团执行层”MVP。
+MVP v1：Hermes Office Mobile 已跑通本地最小闭环，并完成工作空间与专家团执行 MVP。
 
 ## 已完成
 
 - 初始化项目骨架和约束文档。
 - 实现 FastAPI BFF：`/api/health`、`/api/agents`、`/api/activity`、`/api/evolution`、`/api/cron`。
-- 实现 Vite React PWA：办公室、Agent 详情、进化档案、任务动态四个 Tab。
+- 实现 Vite React PWA：办公室、工作空间、Agent 详情、进化档案、任务动态五个 Tab。
 - 实现长期可用版派活第一刀：`POST /api/messages` 优先调用对应 Hermes API Server，失败写入 `backend/runtime/outbox.jsonl`。
 - 实现三 profile 路由：`default:8642`、`media-ops:8650`、`investor:8660`，Bearer key 只从各自 config 的 `platforms.api_server.extra.key` 读取。
 - 前端发送状态区分“已发送到 Hermes”和“已入队兜底”。
 - 完成专家团执行层 MVP：任务页统计后新增专家团卡片，默认召集小黑、小橙、小金，分别以主控汇总、内容传播、商业风险视角并发调用现有消息发送链路；页面仅展示 Hermes 已发送、兜底已入队或失败，不伪造专家回答，真实回答继续由 Hermes 通道与 outbox 承接，发送后刷新任务和兜底队列。
+- 完成工作空间 MVP：前端通过 `localStorage` 保存空间列表并内置示例空间，支持填写名称、目标和选择小黑/小橙/小金成员；创建后自动进入新空间，详情展示成员、创建时间和按成员过滤的最近 5 条真实任务。
+- 完成空间内专家团定向投递：仅向当前空间成员发送包含空间名称、项目目标、成员角色视角和用户问题的消息，复用 `sendMessage`，发送后刷新 outbox 与统一任务历史，页面仅展示投递状态而不伪造回答。
 - 实现长期可用版第二刀：`GET /api/outbox` 展示兜底队列，`POST /api/outbox/retry` 小步重试投递，成功写入 `backend/runtime/sent.jsonl`，失败保留 outbox。
 - 任务动态页增加「兜底队列」模块和「重试 1 条」按钮，避免移动端长时间卡在批量重试。
 - 兜底队列增加默认关闭的「自动补投」安全开关：仅当前浏览器任务页会话生效，每 60 秒固定重试 1 条；关闭、离开任务页或刷新即停止，队列清空后自动停用并显示完成状态。
@@ -29,7 +31,7 @@ MVP v1：Hermes Office Mobile 已跑通本地最小闭环，并进入“专家�
 - 补齐统一任务历史：新增 `GET /api/tasks` 聚合 Cron、outbox、sent 与 Gateway activity，统一六类状态；任务页改用统一列表、统一统计和全部/进行中/已完成/待补投/中断失败/事件筛选。
 - 完成统一任务详情面板：任务卡升级为保留原视觉的可访问按钮，点击后在列表上方展示标题、状态、来源、员工、时间、任务详情、业务化失败原因、技术信息与任务 ID；待补投、失败、暂停或 outbox 来源任务可复用现有兜底队列逐条重试，并沿用 `retrying` 与队列数量禁用逻辑。
 - 成功派活和 outbox 重试成功均写入 `backend/runtime/sent.jsonl`；sent 文件缺失时按空历史返回。
-- 主 UI 移除 emoji 与非统一图标，保留四个 Tab、派活和 outbox 重试数据链路。
+- 主 UI 移除 emoji 与非统一图标，保留五个 Tab、派活和 outbox 重试数据链路。
 - 使用 Dragon Image2 生成并接入小黑、小橙、小金三位员工头像，替换临时 SVG 占位图。
 - 补全 Agent 员工档案：增加角色能力标签、在线/离线与端口状态、最近任务状态摘要、按员工匹配的最近 5 条任务，并将 SOUL.md / AGENT.md 产品化为“人格档案 / 执行手册”。
 - 完成任务页与员工页技术术语降级：成员标识展示为小黑/小橙/小金，任务来源改为中文产品标签，fallback/error code 转换为中文业务文案，原始标识与原因仅保留在 small/meta 技术信息中。

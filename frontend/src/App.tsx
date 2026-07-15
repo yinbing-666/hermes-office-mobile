@@ -3,7 +3,7 @@ import { fetchAgents, fetchEvolution, fetchOutbox, fetchTasks, retryOutbox, send
 import { OfficeIcon, type OfficeIconName } from './components/OfficeIcon';
 import type { AgentInfo, EvolutionData, OutboxData, TaskItem, TaskStatus } from './types';
 
-type Tab = 'office' | 'agent' | 'evolution' | 'activity';
+type Tab = 'office' | 'workspace' | 'agent' | 'evolution' | 'activity';
 type BeforeInstallPromptEvent = Event & {
   prompt: () => Promise<void>;
   userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }>;
@@ -14,6 +14,7 @@ type AutoRetryReport = { completed: boolean; lastAttemptAt: string | null; deliv
 type ExpertAgentId = 'default' | 'media-ops' | 'investor';
 type ExpertDeliveryStatus = 'delivered' | 'queued' | 'failed';
 type ExpertDeliveryResult = { agentId: ExpertAgentId; status: ExpertDeliveryStatus; error?: string };
+type Workspace = { id: string; name: string; goal: string; memberIds: ExpertAgentId[]; createdAt: string };
 
 const fallbackRole: RoleMeta = { role: 'Hermes 智能员工', focus: '自定义智能员工', tone: 'blue', avatar: '', tags: ['任务执行', '协作响应'] };
 
@@ -28,6 +29,8 @@ const expertPanelAgents: Array<{ id: ExpertAgentId; name: string; perspective: s
   { id: 'media-ops', name: '小橙', perspective: '内容传播视角', prompt: '请从内容传播视角分析受众、表达、渠道与传播执行重点。' },
   { id: 'investor', name: '小金', perspective: '商业风险视角', prompt: '请从商业风险视角分析价值、成本、回报、约束与潜在风险。' },
 ];
+
+const workspaceStorageKey = 'hermes-office-workspaces';
 
 const issueReasonMap: Record<string, string> = {
   api_request_failed: 'Hermes 通道请求失败',
@@ -62,10 +65,40 @@ const roleMap: Record<string, RoleMeta> = {
 
 const tabs: Array<{ key: Tab; label: string; icon: OfficeIconName }> = [
   { key: 'office', label: '办公室', icon: 'office' },
+  { key: 'workspace', label: '空间', icon: 'workspace' },
   { key: 'agent', label: '员工', icon: 'agent' },
   { key: 'evolution', label: '进化', icon: 'growth' },
   { key: 'activity', label: '任务', icon: 'activity' },
 ];
+
+function createDefaultWorkspace(): Workspace {
+  return {
+    id: 'workspace-example',
+    name: 'Hermes 移动工作空间',
+    goal: '集中三位智能员工，协作推进移动办公室产品迭代。',
+    memberIds: ['default', 'media-ops', 'investor'],
+    createdAt: new Date().toISOString(),
+  };
+}
+
+function loadWorkspaces(): Workspace[] {
+  try {
+    const stored = window.localStorage.getItem(workspaceStorageKey);
+    if (!stored) return [createDefaultWorkspace()];
+    const parsed = JSON.parse(stored) as Workspace[];
+    const valid = parsed.filter((workspace) => (
+      workspace
+      && typeof workspace.id === 'string'
+      && typeof workspace.name === 'string'
+      && typeof workspace.goal === 'string'
+      && Array.isArray(workspace.memberIds)
+      && typeof workspace.createdAt === 'string'
+    ));
+    return valid.length > 0 ? valid : [createDefaultWorkspace()];
+  } catch {
+    return [createDefaultWorkspace()];
+  }
+}
 
 function formatTime(value?: string | null) {
   if (!value) return '暂无';
@@ -674,6 +707,170 @@ const taskStatusMeta: Record<TaskStatus, { label: string; icon: OfficeIconName }
 
 const taskSourceLabels: Record<string, string> = { cron: '定时任务', outbox: '兜底队列', sent: '已送达', gateway: '网关事件' };
 
+function WorkspacePage({ tasks, onExpertSubmit }: { tasks: TaskItem[]; onExpertSubmit: (memberIds: ExpertAgentId[], workspaceName: string, goal: string, question: string) => Promise<ExpertDeliveryResult[]> }) {
+  const [workspaces, setWorkspaces] = useState<Workspace[]>(loadWorkspaces);
+  const [selectedWorkspaceId, setSelectedWorkspaceId] = useState(() => loadWorkspaces()[0]?.id ?? '');
+  const [creating, setCreating] = useState(false);
+  const [name, setName] = useState('');
+  const [goal, setGoal] = useState('');
+  const [memberIds, setMemberIds] = useState<ExpertAgentId[]>(['default']);
+  const [question, setQuestion] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [deliveryResults, setDeliveryResults] = useState<ExpertDeliveryResult[]>([]);
+  const selectedWorkspace = workspaces.find((workspace) => workspace.id === selectedWorkspaceId) ?? workspaces[0];
+  const recentTasks = useMemo(() => {
+    if (!selectedWorkspace) return [];
+    return tasks
+      .map((task, index) => ({ task, index }))
+      .filter(({ task }) => Boolean(task.agent_id) && selectedWorkspace.memberIds.includes(task.agent_id as ExpertAgentId))
+      .sort((left, right) => {
+        const leftTime = left.task.time ? new Date(left.task.time).getTime() : 0;
+        const rightTime = right.task.time ? new Date(right.task.time).getTime() : 0;
+        return (Number.isNaN(rightTime) ? 0 : rightTime) - (Number.isNaN(leftTime) ? 0 : leftTime) || left.index - right.index;
+      })
+      .slice(0, 5)
+      .map(({ task }) => task);
+  }, [selectedWorkspace, tasks]);
+
+  useEffect(() => {
+    window.localStorage.setItem(workspaceStorageKey, JSON.stringify(workspaces));
+  }, [workspaces]);
+
+  useEffect(() => {
+    setQuestion('');
+    setDeliveryResults([]);
+  }, [selectedWorkspaceId]);
+
+  function toggleMember(agentId: ExpertAgentId) {
+    setMemberIds((current) => current.includes(agentId) ? current.filter((id) => id !== agentId) : [...current, agentId]);
+  }
+
+  function handleCreateWorkspace() {
+    const workspaceName = name.trim();
+    const workspaceGoal = goal.trim();
+    if (!workspaceName || !workspaceGoal || memberIds.length === 0) return;
+    const workspace: Workspace = {
+      id: `workspace-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      name: workspaceName,
+      goal: workspaceGoal,
+      memberIds,
+      createdAt: new Date().toISOString(),
+    };
+    setWorkspaces((current) => [...current, workspace]);
+    setSelectedWorkspaceId(workspace.id);
+    setName('');
+    setGoal('');
+    setMemberIds(['default']);
+    setCreating(false);
+  }
+
+  async function handleSubmit() {
+    const trimmedQuestion = question.trim();
+    if (!selectedWorkspace || !trimmedQuestion || submitting) return;
+    setSubmitting(true);
+    setDeliveryResults([]);
+    try {
+      setDeliveryResults(await onExpertSubmit(selectedWorkspace.memberIds, selectedWorkspace.name, selectedWorkspace.goal, trimmedQuestion));
+      setQuestion('');
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <section className="page-section workspace-page">
+      <div className="workspace-header">
+        <div><p className="eyebrow">Workspace</p><h1>工作空间</h1><span>围绕项目目标组织成员与真实任务</span></div>
+        <button className="workspace-create-button" type="button" onClick={() => setCreating((current) => !current)}>
+          <OfficeIcon name={creating ? 'chevron' : 'workspace'} size={18} />
+          {creating ? '收起' : '新建空间'}
+        </button>
+      </div>
+
+      {creating ? (
+        <div className="workspace-create-card">
+          <label><span>空间名称</span><input value={name} onChange={(event) => setName(event.target.value)} placeholder="例如：新品发布项目" /></label>
+          <label><span>项目目标</span><textarea value={goal} onChange={(event) => setGoal(event.target.value)} placeholder="描述这个空间要共同完成的目标" /></label>
+          <fieldset>
+            <legend>选择成员</legend>
+            <div className="workspace-member-options">
+              {expertPanelAgents.map((expert) => (
+                <button key={expert.id} type="button" className={memberIds.includes(expert.id) ? 'selected' : ''} onClick={() => toggleMember(expert.id)}>
+                  <i className={expert.id} />
+                  <span><strong>{expert.name}</strong><small>{expert.perspective}</small></span>
+                  <OfficeIcon name={memberIds.includes(expert.id) ? 'check' : 'user'} size={15} />
+                </button>
+              ))}
+            </div>
+          </fieldset>
+          <button className="workspace-primary-button" type="button" onClick={handleCreateWorkspace} disabled={!name.trim() || !goal.trim() || memberIds.length === 0}>创建并进入空间</button>
+        </div>
+      ) : null}
+
+      <div className="workspace-switcher" aria-label="工作空间列表">
+        {workspaces.map((workspace) => (
+          <button key={workspace.id} className={workspace.id === selectedWorkspace?.id ? 'selected' : ''} type="button" onClick={() => setSelectedWorkspaceId(workspace.id)}>
+            <OfficeIcon name="workspace" size={16} />
+            <span>{workspace.name}</span>
+          </button>
+        ))}
+      </div>
+
+      {selectedWorkspace ? (
+        <>
+          <div className="workspace-detail-card">
+            <div className="workspace-detail-heading">
+              <div className="workspace-detail-icon"><OfficeIcon name="workspace" size={22} /></div>
+              <div><p>当前空间</p><h2>{selectedWorkspace.name}</h2><small>创建于 {formatTime(selectedWorkspace.createdAt)}</small></div>
+            </div>
+            <div className="workspace-goal"><span>项目目标</span><p>{selectedWorkspace.goal}</p></div>
+            <div className="workspace-member-chips" aria-label="空间成员">
+              {selectedWorkspace.memberIds.map((agentId) => {
+                const expert = expertPanelAgents.find((item) => item.id === agentId);
+                return <span key={agentId} className={agentId}><i />{expert?.name ?? formatAgentName(agentId)}<small>{expert?.perspective}</small></span>;
+              })}
+            </div>
+          </div>
+
+          <div className="workspace-task-card">
+            <div className="workspace-section-heading"><div><span>Task Summary</span><h3>空间任务摘要</h3></div><small>{recentTasks.length > 0 ? `最近 ${recentTasks.length} 条` : '暂无匹配任务'}</small></div>
+            {recentTasks.length > 0 ? (
+              <div className="workspace-task-list">
+                {recentTasks.map((task) => {
+                  const taskMeta = taskStatusMeta[task.status];
+                  return (
+                    <div key={task.id}>
+                      <span className={`task-check ${task.status}`}><OfficeIcon name={taskMeta.icon} size={14} /></span>
+                      <div><strong>{task.title}</strong><p>{formatTaskDetail(task, '任务详情待补充')}</p><small>{formatAgentName(task.agent_id)} · {formatTime(task.time)}</small></div>
+                      <em className={`task-status ${task.status}`}>{taskMeta.label}</em>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : <div className="workspace-empty"><OfficeIcon name="activity" size={18} /><span>当前成员还没有可展示的真实任务</span></div>}
+          </div>
+
+          <div className="workspace-expert-card">
+            <div className="workspace-section-heading"><div><span>Expert Team</span><h3>空间内专家团</h3></div><small>仅投递给当前空间成员</small></div>
+            <textarea value={question} onChange={(event) => setQuestion(event.target.value)} placeholder={`向“${selectedWorkspace.name}”成员提问`} aria-label="空间内专家团问题" />
+            <button className="workspace-primary-button" type="button" onClick={() => void handleSubmit()} disabled={submitting || !question.trim()}><OfficeIcon name="send" size={16} />{submitting ? '正在投递…' : `投递给 ${selectedWorkspace.memberIds.length} 位成员`}</button>
+            {deliveryResults.length > 0 ? (
+              <div className="expert-delivery-results" aria-live="polite">
+                {deliveryResults.map((result) => (
+                  <div key={result.agentId} className={result.status}>
+                    <span><OfficeIcon name={result.status === 'delivered' ? 'check' : result.status === 'queued' ? 'database' : 'alert'} size={15} /></span>
+                    <div><strong>{formatAgentName(result.agentId)}</strong><small>{result.status === 'delivered' ? '已发送到 Hermes' : result.status === 'queued' ? '已入队兜底' : '投递失败'}</small></div>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+          </div>
+        </>
+      ) : null}
+    </section>
+  );
+}
+
 function ActivityPage({ tasks, outbox, onExpertPanelSubmit, onRetryOutbox, retryStatus, retrying, autoRetryEnabled, autoRetryReport, onToggleAutoRetry }: { tasks: TaskItem[]; outbox: OutboxData; onExpertPanelSubmit: (question: string) => Promise<ExpertDeliveryResult[]>; onRetryOutbox: () => void; retryStatus: string; retrying: boolean; autoRetryEnabled: boolean; autoRetryReport: AutoRetryReport; onToggleAutoRetry: () => void }) {
   const [filter, setFilter] = useState<TaskFilter>('all');
   const [selectedTask, setSelectedTask] = useState<TaskItem | null>(null);
@@ -951,6 +1148,27 @@ export default function App() {
     return results;
   }
 
+  async function handleWorkspaceExpertSubmit(memberIds: ExpertAgentId[], workspaceName: string, goal: string, question: string) {
+    const deliveryResults = await Promise.allSettled(memberIds.map(async (agentId) => {
+      const expert = expertPanelAgents.find((item) => item.id === agentId);
+      const message = `你正在参与工作空间“${workspaceName}”的专家协作。\n空间目标：${goal}\n成员角色视角：${expert?.name ?? formatAgentName(agentId)} · ${expert?.perspective ?? '空间成员视角'}。${expert?.prompt ?? ''}\n\n用户问题：\n${question}`;
+      return sendMessage(agentId, message);
+    }));
+    const results = deliveryResults.map<ExpertDeliveryResult>((result, index) => {
+      const agentId = memberIds[index];
+      if (result.status === 'rejected') {
+        return { agentId, status: 'failed', error: result.reason instanceof Error ? result.reason.message : '发送失败' };
+      }
+      if (result.value.delivered) return { agentId, status: 'delivered' };
+      if (result.value.queued) return { agentId, status: 'queued' };
+      return { agentId, status: 'failed', error: result.value.error || result.value.fallback_reason || '发送失败' };
+    });
+    const [refreshedOutbox, refreshedTasks] = await Promise.all([fetchOutbox(), fetchTasks()]);
+    setOutbox(refreshedOutbox.data);
+    setTasks(refreshedTasks.data.items ?? []);
+    return results;
+  }
+
   async function performOutboxRetry(mode: 'manual' | 'auto') {
     if (retryingRef.current || outbox.count === 0) return;
     retryingRef.current = true;
@@ -1062,6 +1280,7 @@ export default function App() {
       </header>
       <OfflineBanner show={offline} />
       {tab === 'office' && <OfficePage agents={agents} tasks={tasks} selectedId={selectedId} setSelectedId={setSelectedId} onSelectAgent={handleSelectAgentFromOffice} pending={outbox.count} backendOffline={offline} installPrompt={installPrompt} installed={installed} onInstall={handleInstall} />}
+      {tab === 'workspace' && <WorkspacePage tasks={tasks} onExpertSubmit={handleWorkspaceExpertSubmit} />}
       {tab === 'agent' && <AgentPage agent={selectedAgent} tasks={tasks} evolution={evolution} />}
       {tab === 'evolution' && <EvolutionPage evolution={evolution} />}
       {tab === 'activity' && <ActivityPage tasks={tasks} outbox={outbox} onExpertPanelSubmit={handleExpertPanelSubmit} onRetryOutbox={handleRetryOutbox} retryStatus={retryStatus} retrying={retrying} autoRetryEnabled={autoRetryEnabled} autoRetryReport={autoRetryReport} onToggleAutoRetry={handleToggleAutoRetry} />}

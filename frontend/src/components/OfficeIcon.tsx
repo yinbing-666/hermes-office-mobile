@@ -1,7 +1,8 @@
-export type OfficeIconName = 'office' | 'agent' | 'growth' | 'activity' | 'monitor' | 'coffee' | 'file' | 'search' | 'message' | 'database' | 'refresh' | 'check' | 'alert' | 'user' | 'terminal' | 'clock' | 'send' | 'chevron';
+export type OfficeIconName = 'office' | 'workspace' | 'agent' | 'growth' | 'activity' | 'monitor' | 'coffee' | 'file' | 'search' | 'message' | 'database' | 'refresh' | 'check' | 'alert' | 'user' | 'terminal' | 'clock' | 'send' | 'chevron';
 
 const paths: Record<OfficeIconName, string[]> = {
   office: ['M8 22V9l8-4 8 4v13', 'M5 22h22', 'M12 22v-7h8v7', 'M11 11h2M19 11h2'],
+  workspace: ['M5 10h9l2 3h11v13H5Z', 'M5 10V7h9l2 3', 'M10 18h12M10 22h8'],
   agent: ['M12 7h8a5 5 0 0 1 5 5v5a5 5 0 0 1-5 5h-8a5 5 0 0 1-5-5v-5a5 5 0 0 1 5-5Z', 'M16 7V4', 'M12 14h.01M20 14h.01', 'M13 18h6'],
   growth: ['M16 25V12', 'M16 12c-4 0-7-2-8-6 5 0 8 2 8 6Z', 'M16 16c4 0 7-2 8-6-5 0-8 2-8 6Z'],
   activity: ['M7 7h18v18H7Z', 'M11 12h10M11 17h10M11 22h6'],
