@@ -372,6 +372,7 @@ function AgentPage({ agent, tasks, evolution }: { agent?: AgentInfo; tasks: Task
 }
 
 function EvolutionPage({ evolution }: { evolution: EvolutionData }) {
+  const [expandedSkillGroups, setExpandedSkillGroups] = useState<Record<string, boolean>>({});
   const recentSkills = evolution.skills?.recent ?? [];
   const profiles = evolution.profiles ?? [];
   const trend = evolution.trend ?? [];
@@ -473,17 +474,35 @@ function EvolutionPage({ evolution }: { evolution: EvolutionData }) {
 
       <div className="section-heading"><div><p className="section-kicker">Skill Tree</p><h2>技能树</h2></div><span>按名称关键词归类</span></div>
       <div className="skill-tree-grid">
-        {skillTree.map((group) => (
-          <div className="skill-tree-card" key={group.key}>
-            <div className="skill-tree-head">
-              <span><OfficeIcon name={skillTreeIcons[group.key] ?? 'growth'} size={17} /></span>
-              <div><strong>{group.title}</strong><small>{group.children.length ? `${group.children.length} 项能力` : '待记录'}</small></div>
+        {skillTree.map((group) => {
+          const expanded = Boolean(expandedSkillGroups[group.key]);
+          const hiddenSkillCount = Math.max(group.children.length - 6, 0);
+          const visibleSkills = expanded ? group.children : group.children.slice(0, 6);
+          const childrenId = `skill-tree-${group.key}`;
+
+          return (
+            <div className="skill-tree-card" key={group.key}>
+              <div className="skill-tree-head">
+                <span><OfficeIcon name={skillTreeIcons[group.key] ?? 'growth'} size={17} /></span>
+                <div><strong>{group.title}</strong><small>{group.children.length ? `${group.children.length} 项能力` : '待记录'}</small></div>
+              </div>
+              <div className="skill-tree-children" id={childrenId}>
+                {group.children.length === 0 ? <span className="skill-tree-empty">暂无匹配 Skill</span> : visibleSkills.map((skill) => <span key={skill.name} title={skill.name}>{skill.name}</span>)}
+              </div>
+              {hiddenSkillCount > 0 && (
+                <button
+                  aria-controls={childrenId}
+                  aria-expanded={expanded}
+                  className="skill-tree-toggle"
+                  onClick={() => setExpandedSkillGroups((current) => ({ ...current, [group.key]: !expanded }))}
+                  type="button"
+                >
+                  {expanded ? '收起' : `展开 ${hiddenSkillCount} 项`}
+                </button>
+              )}
             </div>
-            <div className="skill-tree-children">
-              {group.children.length === 0 ? <span className="skill-tree-empty">暂无匹配 Skill</span> : group.children.map((skill) => <span key={skill.name}>{skill.name}</span>)}
-            </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       <div className="section-heading"><div><p className="section-kicker">Employee Profiles</p><h2>员工档案卡</h2></div><span>{profiles.length || 0} 份档案</span></div>

@@ -232,8 +232,10 @@ textarea:focus { border-color: #8fb8df; box-shadow: 0 0 0 3px rgba(77, 143, 216,
 .skill-tree-head strong { font-size: 12px; font-weight: 650; }
 .skill-tree-head small { color: var(--muted); font-size: 9px; }
 .skill-tree-children { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 11px; }
-.skill-tree-children > span { max-width: 100%; overflow: hidden; padding: 4px 6px; color: #5f6b75; background: var(--surface-soft); border: 1px solid #e8e9e7; border-radius: 5px; font-size: 9px; line-height: 1.2; text-overflow: ellipsis; white-space: nowrap; }
+.skill-tree-children > span { min-width: 0; max-width: 100%; overflow: hidden; padding: 4px 6px; color: #5f6b75; background: var(--surface-soft); border: 1px solid #e8e9e7; border-radius: 5px; font-size: 9px; line-height: 1.2; text-overflow: ellipsis; white-space: nowrap; }
 .skill-tree-children .skill-tree-empty { color: var(--muted); border-style: dashed; }
+.skill-tree-toggle { display: inline-flex; align-items: center; justify-content: center; margin-top: 9px; padding: 5px 9px; color: #58738b; background: #f3f7fa; border: 1px solid #dce7ee; border-radius: 999px; font-size: 9px; font-weight: 650; line-height: 1; white-space: nowrap; }
+.skill-tree-toggle:focus-visible { outline: 2px solid #8db2cf; outline-offset: 2px; }
 
 .evolution-event { position: relative; display: grid; grid-template-columns: 30px minmax(0, 1fr) auto; gap: 9px; align-items: center; padding: 11px 0; border-top: 1px solid var(--line); }
 .event-icon { width: 30px; height: 30px; display: grid; place-items: center; color: #66839c; background: #f3f7fa; border: 1px solid #e3e9ed; border-radius: 8px; }
