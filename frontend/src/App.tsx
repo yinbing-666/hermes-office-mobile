@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { fetchAgents, fetchEvolution, fetchOutbox, fetchTasks, retryOutbox, sendMessage } from './api';
 import { OfficeIcon, type OfficeIconName } from './components/OfficeIcon';
 import type { AgentInfo, EvolutionData, OutboxData, TaskItem, TaskStatus } from './types';
@@ -10,6 +10,7 @@ type BeforeInstallPromptEvent = Event & {
 };
 
 type RoleMeta = { role: string; focus: string; tone: string; avatar: string; tags: string[] };
+type AutoRetryReport = { completed: boolean; lastAttemptAt: string | null; delivered: number | null; remaining: number | null; error: string };
 
 const fallbackRole: RoleMeta = { role: 'Hermes Agent', focus: '自定义智能员工', tone: 'blue', avatar: '', tags: ['任务执行', '协作响应'] };
 
@@ -49,6 +50,13 @@ function formatTime(value?: string | null) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
   return date.toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+}
+
+function formatAttemptTime(value?: string | null) {
+  if (!value) return '尚未尝试';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 }
 
 function StatusPill({ status }: { status: string }) {
@@ -474,7 +482,7 @@ const taskStatusMeta: Record<TaskStatus, { label: string; icon: OfficeIconName }
 
 const taskSourceLabels: Record<string, string> = { cron: 'Cron', outbox: 'Outbox', sent: 'Sent', gateway: 'Gateway' };
 
-function ActivityPage({ tasks, outbox, onRetryOutbox, retryStatus, retrying }: { tasks: TaskItem[]; outbox: OutboxData; onRetryOutbox: () => void; retryStatus: string; retrying: boolean }) {
+function ActivityPage({ tasks, outbox, onRetryOutbox, retryStatus, retrying, autoRetryEnabled, autoRetryReport, onToggleAutoRetry }: { tasks: TaskItem[]; outbox: OutboxData; onRetryOutbox: () => void; retryStatus: string; retrying: boolean; autoRetryEnabled: boolean; autoRetryReport: AutoRetryReport; onToggleAutoRetry: () => void }) {
   const [filter, setFilter] = useState<TaskFilter>('all');
   const runningCount = tasks.filter((task) => task.status === 'running').length;
   const completedCount = tasks.filter((task) => task.status === 'completed').length;
@@ -505,6 +513,38 @@ function ActivityPage({ tasks, outbox, onRetryOutbox, retryStatus, retrying }: {
             <OfficeIcon name="refresh" size={15} />
             {retrying ? '重试中…' : '逐条重试'}
           </button>
+        </div>
+        <div className="outbox-auto">
+          <div className="outbox-auto-heading">
+            <div className={`outbox-auto-icon ${autoRetryEnabled ? 'running' : autoRetryReport.completed ? 'completed' : ''}`}>
+              <OfficeIcon name={autoRetryEnabled ? 'refresh' : autoRetryReport.completed ? 'check' : 'clock'} size={17} />
+            </div>
+            <div className="outbox-auto-copy">
+              <strong>自动补投</strong>
+              <small>每 60 秒仅补投 1 条，默认关闭，仅当前任务页会话</small>
+            </div>
+            <button
+              className={`safe-switch ${autoRetryEnabled ? 'enabled' : ''}`}
+              type="button"
+              role="switch"
+              aria-checked={autoRetryEnabled}
+              aria-label="自动补投"
+              onClick={onToggleAutoRetry}
+              disabled={outbox.count === 0 && !autoRetryEnabled}
+            >
+              <span />
+            </button>
+          </div>
+          <div className="outbox-auto-status">
+            <div><span>状态</span><strong>{autoRetryEnabled ? '运行中' : autoRetryReport.completed ? '已完成' : '关闭'}</strong></div>
+            <div><span>最近一次尝试</span><strong>{formatAttemptTime(autoRetryReport.lastAttemptAt)}</strong></div>
+          </div>
+          {autoRetryReport.delivered !== null && autoRetryReport.remaining !== null ? (
+            <div className="outbox-auto-result success"><OfficeIcon name="check" size={14} /><span>最近一次成功 {autoRetryReport.delivered} 条，剩余 {autoRetryReport.remaining} 条</span></div>
+          ) : null}
+          {autoRetryReport.error ? (
+            <div className="outbox-auto-result error"><OfficeIcon name="alert" size={14} /><span>{autoRetryReport.error}</span></div>
+          ) : null}
         </div>
         {outbox.items.length > 0 && <div className="outbox-preview">
           {outbox.items.slice(-3).reverse().map((item) => (
@@ -548,9 +588,12 @@ export default function App() {
   const [outbox, setOutbox] = useState<OutboxData>({ count: 0, items: [] });
   const [retrying, setRetrying] = useState(false);
   const [retryStatus, setRetryStatus] = useState('');
+  const [autoRetryEnabled, setAutoRetryEnabled] = useState(false);
+  const [autoRetryReport, setAutoRetryReport] = useState<AutoRetryReport>({ completed: false, lastAttemptAt: null, delivered: null, remaining: null, error: '' });
   const [offline, setOffline] = useState(false);
   const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null);
   const [installed, setInstalled] = useState(() => window.matchMedia('(display-mode: standalone)').matches || Boolean((navigator as Navigator & { standalone?: boolean }).standalone));
+  const retryingRef = useRef(false);
 
   useEffect(() => {
     Promise.all([fetchAgents(), fetchEvolution(), fetchTasks(), fetchOutbox()]).then(([agentRes, evolutionRes, taskRes, outboxRes]) => {
@@ -582,22 +625,71 @@ export default function App() {
 
   const selectedAgent = useMemo(() => agents.find((agent) => agent.id === selectedId) ?? agents[0], [agents, selectedId]);
 
-  async function handleRetryOutbox() {
-    if (retrying || outbox.count === 0) return;
+  async function performOutboxRetry(mode: 'manual' | 'auto') {
+    if (retryingRef.current || outbox.count === 0) return;
+    retryingRef.current = true;
     setRetrying(true);
-    setRetryStatus('');
+    if (mode === 'manual') setRetryStatus('');
+    const attemptedAt = new Date().toISOString();
+    if (mode === 'auto') setAutoRetryReport((current) => ({ ...current, completed: false, lastAttemptAt: attemptedAt, error: '' }));
     try {
       const result = await retryOutbox(1);
-      setRetryStatus(`已尝试 ${result.attempted} 条，成功 ${result.delivered} 条，剩余 ${result.remaining} 条`);
+      if (mode === 'manual') setRetryStatus(`已尝试 ${result.attempted} 条，成功 ${result.delivered} 条，剩余 ${result.remaining} 条`);
+      if (mode === 'auto') {
+        const failure = result.failures?.[0]?.fallback_reason;
+        setAutoRetryReport({
+          completed: result.remaining === 0,
+          lastAttemptAt: attemptedAt,
+          delivered: result.delivered,
+          remaining: result.remaining,
+          error: failure ? `补投失败：${failure}` : '',
+        });
+        if (result.remaining === 0) setAutoRetryEnabled(false);
+      }
       const [refreshedOutbox, refreshedTasks] = await Promise.all([fetchOutbox(), fetchTasks()]);
       setOutbox(refreshedOutbox.data);
       setTasks(refreshedTasks.data.items ?? []);
     } catch (error) {
-      setRetryStatus(error instanceof Error ? error.message : '重试失败');
+      const message = error instanceof Error ? error.message : '重试失败';
+      if (mode === 'manual') setRetryStatus(message);
+      else setAutoRetryReport((current) => ({ ...current, lastAttemptAt: attemptedAt, error: `补投失败：${message}` }));
     } finally {
+      retryingRef.current = false;
       setRetrying(false);
     }
   }
+
+  function handleRetryOutbox() {
+    void performOutboxRetry('manual');
+  }
+
+  function handleToggleAutoRetry() {
+    if (autoRetryEnabled) {
+      setAutoRetryEnabled(false);
+      setAutoRetryReport((current) => ({ ...current, completed: false }));
+      return;
+    }
+    if (outbox.count === 0) {
+      setAutoRetryReport((current) => ({ ...current, completed: true, remaining: 0, error: '' }));
+      return;
+    }
+    setAutoRetryEnabled(true);
+    setAutoRetryReport((current) => ({ ...current, completed: false, error: '' }));
+  }
+
+  useEffect(() => {
+    if (!autoRetryEnabled || tab !== 'activity' || outbox.count === 0) return;
+    const timer = window.setInterval(() => {
+      void performOutboxRetry('auto');
+    }, 60_000);
+    return () => window.clearInterval(timer);
+  }, [autoRetryEnabled, tab, outbox.count]);
+
+  useEffect(() => {
+    if (!autoRetryEnabled || outbox.count !== 0) return;
+    setAutoRetryEnabled(false);
+    setAutoRetryReport((current) => ({ ...current, completed: true, remaining: 0, error: '' }));
+  }, [autoRetryEnabled, outbox.count]);
 
   async function handleInstall() {
     if (!installPrompt) return;
@@ -608,6 +700,10 @@ export default function App() {
   }
 
   function handleTabChange(nextTab: Tab) {
+    if (nextTab !== 'activity' && autoRetryEnabled) {
+      setAutoRetryEnabled(false);
+      setAutoRetryReport((current) => ({ ...current, completed: false }));
+    }
     setTab(nextTab);
     const url = new URL(window.location.href);
     if (nextTab === 'office') url.searchParams.delete('view');
@@ -630,7 +726,7 @@ export default function App() {
       {tab === 'office' && <OfficePage agents={agents} selectedId={selectedId} setSelectedId={setSelectedId} pending={outbox.count} backendOffline={offline} installPrompt={installPrompt} installed={installed} onInstall={handleInstall} />}
       {tab === 'agent' && <AgentPage agent={selectedAgent} tasks={tasks} evolution={evolution} />}
       {tab === 'evolution' && <EvolutionPage evolution={evolution} />}
-      {tab === 'activity' && <ActivityPage tasks={tasks} outbox={outbox} onRetryOutbox={handleRetryOutbox} retryStatus={retryStatus} retrying={retrying} />}
+      {tab === 'activity' && <ActivityPage tasks={tasks} outbox={outbox} onRetryOutbox={handleRetryOutbox} retryStatus={retryStatus} retrying={retrying} autoRetryEnabled={autoRetryEnabled} autoRetryReport={autoRetryReport} onToggleAutoRetry={handleToggleAutoRetry} />}
       <nav className="tabbar" aria-label="主导航">
         {tabs.map(({ key, label, icon }) => (
           <button key={key} className={tab === key ? 'selected' : ''} onClick={() => handleTabChange(key)}>

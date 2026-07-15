@@ -8,7 +8,7 @@
 - Agent 详情：补全员工档案，展示在线/离线与端口、能力标签、按 `agent_id` 匹配的最近 5 条任务，以及产品化的“人格档案 / 执行手册”状态和最近更新时间；无任务或档案时明确显示待记录。
 - 派活入口：优先把任务发送到对应 Hermes API Server；不可用时写入 `backend/runtime/outbox.jsonl` 兜底。
 - 进化档案：保留成长概览、能力矩阵和员工档案卡，并展示最近 7 天能力增长条形趋势、真实 Git / 档案 / Skill 里程碑，以及消息处理、知识管理、开发执行、自动化四类技能树；缺失项明确显示暂无或待记录。
-- 任务动态：通过 `GET /api/tasks` 聚合 Cron、outbox、sent 与 Gateway activity，统一展示进行中、已完成、待补投、失败/暂停和事件状态；支持移动端筛选 chips，并保留兜底队列逐条重试。
+- 任务动态：通过 `GET /api/tasks` 聚合 Cron、outbox、sent 与 Gateway activity，统一展示进行中、已完成、待补投、失败/暂停和事件状态；支持移动端筛选 chips，并保留兜底队列逐条重试和默认关闭的安全“自动补投”开关。
 - 移动导航：保留办公室、员工、进化、任务四个 Tab，使用统一线性图标和浅蓝选中态。
 - PWA 安装：提供 192 / 512 / maskable 图标、办公室与任务快捷入口，以及 Android 安装提示和 iOS“添加到主屏幕”说明。
 - 离线浏览：Service Worker 缓存 app shell、manifest、图标和员工头像；API 始终 network-only，后端不可用时前端明确展示离线缓存或模拟数据并允许继续浏览。
@@ -74,6 +74,8 @@ curl -sS -X POST http://127.0.0.1:8787/api/messages \
 | `GET /api/outbox` | 查看兜底队列最近 50 条 |
 | `POST /api/outbox/retry` | 小步重试 outbox，默认/建议一次 1 条，避免手机端长时间等待 |
 
+任务页的“自动补投”默认关闭。用户手动开启后，当前浏览器任务页每 60 秒调用一次现有 `POST /api/outbox/retry`，每次固定只尝试 1 条；关闭开关、离开任务页或刷新页面都会停止，不会创建后台常驻发送任务，也不会跨浏览器会话保存。队列清空后会自动停用并显示完成状态，手动“逐条重试”始终保留。
+
 `POST /api/messages` 会按 profile 路由到本机 Hermes API Server：
 
 | profile | 端口 | config |
@@ -87,6 +89,7 @@ curl -sS -X POST http://127.0.0.1:8787/api/messages \
 ## 当前边界
 
 - Hermes API Server 为首选发送通道，项目内 outbox 只作为失败兜底。
+- 自动补投仅在用户主动开启后的当前浏览器任务页会话内运行，默认关闭，不后台常驻。
 - 不修改 Hermes core、gateway、config.yaml、.env 或密钥。
 - 不公网暴露，默认本机访问。
 - Tailscale 地址仅供同一 Tailnet 内的设备访问，不替代公网部署与鉴权。
