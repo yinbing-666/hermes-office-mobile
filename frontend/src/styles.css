@@ -76,51 +76,74 @@ p { color: var(--muted); line-height: 1.6; }
 .virtual-office-heading, .resource-task-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .virtual-office-heading > span { display: inline-flex; align-items: center; gap: 6px; color: #75808a; font-size: 10px; }
 .virtual-office-heading > span i { width: 6px; height: 6px; background: var(--green); border-radius: 50%; box-shadow: 0 0 0 3px #e9f5ee; }
-.office-room { position: relative; height: 218px; margin: 10px -2px -2px; overflow: hidden; border: 1px solid #e4e1da; border-radius: 11px; background: linear-gradient(155deg, #f8f7f3 0%, #efede6 100%); }
-.office-floor-grid { position: absolute; inset: 16px -24px -45px; transform: rotateX(55deg) rotateZ(-28deg) scale(1.12); background-color: #f4f1e9; background-image: linear-gradient(#dedbd2 1px, transparent 1px), linear-gradient(90deg, #dedbd2 1px, transparent 1px); background-size: 29px 29px; border: 1px solid #d8d4ca; box-shadow: inset 0 0 45px rgba(255, 255, 255, .72); }
-.office-kitchenette { position: absolute; top: 16px; left: 18px; width: 104px; height: 70px; }
-.kitchen-cabinet { position: absolute; top: 0; left: 0; width: 84px; height: 27px; display: grid; grid-template-columns: repeat(3, 1fr); padding: 3px; background: #e8e5dc; border: 1px solid #cbc8bf; border-radius: 4px; box-shadow: 0 4px 0 #d3d0c7; }
-.kitchen-cabinet span { border-right: 1px solid #cbc8bf; }
+.office-room { position: relative; height: 252px; margin: 10px -2px -2px; overflow: hidden; border: 1px solid #e4e1da; border-radius: 11px; background: radial-gradient(circle at 50% 30%, rgba(255, 255, 255, .96), rgba(247, 245, 239, .72) 55%, #efede7 100%); perspective: 920px; perspective-origin: 50% 36%; }
+.office-room::after { content: ""; position: absolute; left: 13%; right: 10%; bottom: 13px; height: 30px; background: rgba(97, 88, 73, .15); border-radius: 50%; filter: blur(15px); transform: rotate(-4deg); }
+.office-world { position: absolute; left: 50%; top: 51%; width: 360px; height: 216px; transform: translate(-50%, -48%) rotateX(58deg) rotateZ(-34deg) scale(.86); transform-style: preserve-3d; }
+.office-platform { position: absolute; inset: 0; background-color: #f5f2e9; background-image: linear-gradient(rgba(207, 202, 190, .55) 1px, transparent 1px), linear-gradient(90deg, rgba(207, 202, 190, .55) 1px, transparent 1px); background-size: 36px 36px; border: 1px solid #d4d0c5; border-radius: 8px; box-shadow: inset 0 0 40px rgba(255, 255, 255, .7), 18px 24px 28px rgba(91, 82, 68, .16); transform-style: preserve-3d; }
+.office-platform::before { content: ""; position: absolute; left: 7px; right: -13px; bottom: -14px; height: 14px; background: linear-gradient(90deg, #d4cec0, #c8c1b3); border-radius: 0 0 6px 6px; transform-origin: top; transform: rotateX(-90deg); box-shadow: 0 8px 12px rgba(85, 76, 62, .12); }
+.office-platform::after { content: ""; position: absolute; top: 7px; right: -14px; bottom: 0; width: 14px; background: linear-gradient(#ded8cc, #c8c1b3); border-radius: 0 5px 5px 0; transform-origin: left; transform: rotateY(90deg); }
+.office-zone { position: absolute; padding: 4px 7px; color: #aaa397; background: rgba(255, 255, 255, .54); border: 1px solid rgba(211, 206, 195, .72); border-radius: 4px; font-size: 8px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; transform: translateZ(2px); }
+.kitchen-zone { left: 17px; top: 14px; }
+.focus-zone { right: 18px; top: 14px; }
+.office-kitchenette, .office-treadmill, .office-desk, .office-seat, .office-plant { position: absolute; transform-style: preserve-3d; }
+.office-kitchenette { left: 20px; top: 43px; width: 130px; height: 80px; }
+.kitchen-cabinet, .kitchen-counter, .kitchen-island { position: absolute; background: #ebe7dc; border: 1px solid #c9c3b7; transform-style: preserve-3d; }
+.kitchen-cabinet::before, .kitchen-counter::before, .kitchen-island::before, .office-desk::before, .desk-drawer::before, .office-treadmill::before { content: ""; position: absolute; top: 4px; right: -13px; bottom: -1px; width: 13px; background: #c9c2b5; border: 1px solid #bdb5a7; transform-origin: left; transform: rotateY(90deg); }
+.kitchen-cabinet::after, .kitchen-counter::after, .kitchen-island::after, .office-desk::after, .desk-drawer::after, .office-treadmill::after { content: ""; position: absolute; left: 4px; right: -13px; bottom: -13px; height: 13px; background: #d8d1c5; border: 1px solid #bdb5a7; transform-origin: top; transform: rotateX(-90deg); }
+.kitchen-cabinet { top: 0; height: 22px; transform: translateZ(34px); }
+.cabinet-one { left: 0; width: 70px; }
+.cabinet-two { left: 76px; width: 35px; }
+.kitchen-cabinet span { position: relative; display: inline-block; width: 50%; height: 100%; border-right: 1px solid #cbc5b9; }
 .kitchen-cabinet span:last-child { border-right: 0; }
-.kitchen-counter { position: absolute; top: 38px; left: 2px; width: 91px; height: 22px; background: #d9d5ca; border: 1px solid #c2beb4; border-radius: 3px; box-shadow: 0 7px 0 #c9c5bb; }
-.kitchen-counter i { position: absolute; top: 5px; left: 12px; width: 20px; height: 9px; border: 2px solid #aeb4b5; border-radius: 50%; }
-.kitchen-counter b { position: absolute; top: -12px; right: 12px; width: 15px; height: 17px; background: #f5f4f0; border: 1px solid #b9b7b0; border-radius: 3px 3px 5px 5px; box-shadow: inset 0 -5px #c9d7d6; }
-.kitchen-stool { position: absolute; top: 50px; width: 17px; height: 9px; background: #c9b89e; border: 1px solid #aa9a84; border-radius: 50%; box-shadow: 0 8px 0 -5px #9d9487; }
-.stool-one { left: 66px; }
-.stool-two { left: 91px; }
-.office-treadmill { position: absolute; top: 27px; right: 20px; width: 72px; height: 38px; transform: skewY(-8deg); }
-.office-treadmill span { position: absolute; left: 3px; right: 2px; bottom: 0; height: 18px; background: #cfd3d3; border: 1px solid #adb3b4; border-radius: 11px 4px 5px 11px; box-shadow: inset 0 0 0 5px #e7e8e5, 0 4px 0 #b9bdbd; }
-.office-treadmill i { position: absolute; right: 8px; top: 0; width: 4px; height: 24px; background: #969fa2; border-radius: 3px; }
-.office-treadmill b { position: absolute; right: 2px; top: 0; width: 19px; height: 11px; background: #76858a; border: 2px solid #b9c1c2; border-radius: 3px; }
-.office-desk { position: absolute; width: 78px; height: 34px; background: #e5ded2; border: 1px solid #c7bfb2; border-radius: 4px; box-shadow: 0 8px 0 #cfc6b9, 0 12px 12px rgba(87, 78, 66, .12); transform: skewY(-5deg); }
-.office-desk::before, .office-desk::after { content: ""; position: absolute; bottom: -12px; width: 4px; height: 12px; background: #a8a39b; border-radius: 0 0 2px 2px; }
-.office-desk::before { left: 9px; }
-.office-desk::after { right: 9px; }
-.office-desk i { position: absolute; top: -17px; left: 25px; width: 30px; height: 20px; background: #707a7d; border: 3px solid #aeb6b6; border-radius: 3px; box-shadow: inset 0 0 0 2px #dce3e1; }
-.office-desk i::after { content: ""; position: absolute; left: 10px; bottom: -8px; width: 4px; height: 7px; background: #8e9696; }
-.office-desk span { position: absolute; top: 8px; left: 7px; width: 14px; height: 9px; background: #f4f0e8; border: 1px solid #bdb7ad; border-radius: 2px; }
-.office-desk b { position: absolute; top: 7px; right: 7px; width: 7px; height: 10px; background: #a9b9b4; border-radius: 2px 2px 4px 4px; }
-.desk-one { left: 22%; top: 50%; }
-.desk-two { left: 51%; top: 42%; }
-.desk-three { left: 34%; top: 75%; }
-.desk-four { right: 7%; top: 70%; }
-.office-person { position: absolute; z-index: 3; width: 25px; height: 38px; }
-.office-person i { position: absolute; top: 0; left: 5px; width: 15px; height: 15px; background: #d7b9a1; border: 3px solid #626a70; border-radius: 50%; box-shadow: 0 2px 4px rgba(52, 55, 57, .16); }
-.office-person span { position: absolute; top: 14px; left: 2px; width: 21px; height: 22px; background: #8297a8; border: 1px solid #697e8e; border-radius: 8px 8px 5px 5px; box-shadow: inset 0 -7px rgba(255, 255, 255, .12); }
-.person-one { left: 29%; top: 58%; }
-.person-two { left: 58%; top: 50%; }
-.person-two span { background: #b0a084; border-color: #94856e; }
-.person-three { right: 14%; top: 76%; }
-.person-three span { background: #889b91; border-color: #6f8278; }
-.office-plant { position: absolute; width: 25px; height: 42px; }
-.office-plant i { position: absolute; bottom: 0; left: 5px; width: 17px; height: 15px; background: #c5b49a; border: 1px solid #a89578; border-radius: 3px 3px 7px 7px; }
-.office-plant span, .office-plant span::before, .office-plant span::after { position: absolute; width: 12px; height: 20px; background: #91a697; border-radius: 70% 20% 70% 20%; }
-.office-plant span { top: 6px; left: 7px; }
-.office-plant span::before, .office-plant span::after { content: ""; top: 5px; }
-.office-plant span::before { left: -7px; transform: rotate(-42deg); }
-.office-plant span::after { left: 7px; transform: rotate(47deg); }
-.plant-one { right: 8px; top: 87px; }
-.plant-two { left: 8px; bottom: 8px; transform: scale(.82); }
+.kitchen-counter { left: 0; top: 31px; width: 111px; height: 25px; background: #ddd8cd; transform: translateZ(22px); }
+.kitchen-sink { position: absolute; left: 13px; top: 6px; width: 25px; height: 12px; border: 2px solid #aeb3b1; border-radius: 50%; box-shadow: inset 0 2px 3px rgba(89, 95, 94, .12); }
+.kitchen-machine { position: absolute; right: 13px; top: 6px; width: 16px; height: 14px; background: #f6f4ee; border: 1px solid #aeb3b1; border-radius: 3px; box-shadow: inset 0 -5px #c9d6d3; transform: translateZ(8px); }
+.kitchen-island { left: 42px; top: 64px; width: 73px; height: 22px; background: #e7ded0; transform: translateZ(17px); }
+.kitchen-island span { position: absolute; inset: 5px 13px; border: 1px solid #c7bcae; border-radius: 10px; }
+.kitchen-stool { position: absolute; top: 93px; width: 18px; height: 18px; background: #c9b79d; border: 1px solid #aa987e; border-radius: 50%; box-shadow: 7px 8px 8px rgba(75, 67, 56, .14); transform: translateZ(15px); }
+.kitchen-stool::after { content: ""; position: absolute; left: 6px; top: 9px; width: 6px; height: 16px; background: #9f978a; transform-origin: top; transform: rotateX(-82deg); }
+.stool-one { left: 54px; }
+.stool-two { left: 92px; }
+.office-treadmill { right: 23px; top: 43px; width: 79px; height: 37px; background: #d7dbd9; border: 1px solid #aeb5b4; border-radius: 18px 6px 6px 18px; transform: translateZ(10px); box-shadow: 10px 13px 14px rgba(68, 75, 74, .12); }
+.office-treadmill::before { background: #b1b8b7; border-color: #9da5a4; border-radius: 0 5px 5px 0; }
+.office-treadmill::after { background: #c2c8c6; border-color: #9da5a4; }
+.treadmill-belt { position: absolute; inset: 6px 10px 6px 7px; background: repeating-linear-gradient(90deg, #707c7d 0 4px, #778384 4px 8px); border: 3px solid #eef0ed; border-radius: 13px 4px 4px 13px; }
+.treadmill-post { position: absolute; right: 7px; top: 1px; width: 5px; height: 31px; background: #8d999a; transform-origin: bottom; transform: rotateX(-82deg) translateZ(1px); }
+.treadmill-console { position: absolute; right: -3px; top: -17px; width: 25px; height: 15px; background: #718083; border: 3px solid #bac2c1; border-radius: 3px; transform-origin: bottom; transform: rotateX(-82deg) translateZ(24px); box-shadow: inset 0 0 0 2px #dce4e1; }
+.office-desk { width: 74px; height: 35px; background: #e7dfd2; border: 1px solid #c2b8a8; border-radius: 4px; transform: translateZ(28px); box-shadow: 12px 15px 16px rgba(86, 77, 64, .13); }
+.office-desk::before { background: #c8bdae; }
+.office-desk::after { background: #d4c9ba; }
+.desk-one { left: 151px; top: 55px; }
+.desk-two { left: 231px; top: 93px; }
+.desk-three { left: 89px; top: 139px; }
+.desk-four { left: 184px; top: 156px; }
+.desk-drawer { position: absolute; left: 7px; top: 7px; width: 17px; height: 20px; background: #d7d0c5; border: 1px solid #bdb4a7; transform: translateZ(-21px); transform-style: preserve-3d; }
+.desk-drawer::before { right: -7px; width: 7px; background: #bdb5a9; }
+.desk-drawer::after { right: -7px; bottom: -7px; height: 7px; background: #c9c0b5; }
+.desk-keyboard { position: absolute; left: 28px; bottom: 6px; width: 24px; height: 8px; background: #f5f2eb; border: 1px solid #bbb5ac; border-radius: 2px; transform: translateZ(2px); }
+.desk-cup { position: absolute; right: 8px; top: 7px; width: 8px; height: 10px; background: #a9b9b3; border-radius: 2px 2px 5px 5px; transform: translateZ(4px); box-shadow: inset -2px 0 rgba(255, 255, 255, .35); }
+.office-monitor { position: absolute; left: 27px; top: 7px; width: 31px; height: 7px; background: #919a99; transform: translateZ(4px); transform-style: preserve-3d; }
+.office-monitor::before { content: ""; position: absolute; left: 3px; bottom: 3px; width: 26px; height: 19px; background: linear-gradient(145deg, #dce7e3, #91a4a3); border: 3px solid #6f797a; border-radius: 3px; transform-origin: bottom; transform: rotateX(-90deg) translateZ(1px); box-shadow: inset 0 0 0 2px rgba(255, 255, 255, .45), 0 4px 7px rgba(49, 56, 57, .18); }
+.office-monitor i { position: absolute; left: 14px; top: -7px; width: 4px; height: 11px; background: #858e8d; transform-origin: bottom; transform: rotateX(-90deg); }
+.office-seat { width: 28px; height: 28px; background: #aab2b0; border: 1px solid #858e8d; border-radius: 9px; transform: translateZ(13px); box-shadow: 8px 10px 10px rgba(65, 70, 69, .13); }
+.seat-one { left: 177px; top: 102px; }
+.seat-two { left: 269px; top: 137px; }
+.seat-three { left: 127px; top: 181px; }
+.chair-back { position: absolute; left: 3px; top: 18px; width: 22px; height: 17px; background: #8f9998; border: 1px solid #75807f; border-radius: 5px 5px 9px 9px; transform-origin: top; transform: rotateX(-86deg) translateZ(1px); }
+.office-person { position: absolute; left: 4px; top: 3px; width: 20px; height: 20px; transform-style: preserve-3d; }
+.office-person i { position: absolute; left: 5px; top: 0; width: 12px; height: 12px; background: #d8bca5; border: 3px solid #60696d; border-radius: 50%; transform: translateZ(18px); box-shadow: 3px 5px 6px rgba(53, 56, 58, .18); }
+.office-person b { position: absolute; left: 1px; top: 10px; width: 20px; height: 18px; background: #8399a8; border: 1px solid #687e8d; border-radius: 8px 8px 5px 5px; transform: translateZ(10px); box-shadow: inset -5px -5px rgba(255, 255, 255, .1); }
+.seat-two .office-person b { background: #b0a084; border-color: #94856e; }
+.seat-three .office-person b { background: #889b91; border-color: #6f8278; }
+.office-plant { width: 27px; height: 27px; background: #c5b49a; border: 1px solid #a89578; border-radius: 5px 5px 9px 9px; transform: translateZ(13px); box-shadow: 7px 9px 10px rgba(69, 75, 66, .12); }
+.office-plant::before { content: ""; position: absolute; left: 4px; right: -5px; bottom: -6px; height: 6px; background: #aa987e; transform-origin: top; transform: rotateX(-90deg); }
+.office-plant i, .office-plant span { position: absolute; width: 12px; height: 27px; background: #8fa394; border-radius: 80% 20% 70% 30%; transform-origin: bottom; box-shadow: inset -3px -3px rgba(64, 91, 73, .08); }
+.office-plant i { left: 8px; top: -18px; transform: rotateX(-72deg) rotateZ(-8deg) translateZ(11px); }
+.office-plant span:nth-of-type(1) { left: 1px; top: -13px; transform: rotateX(-72deg) rotateZ(-40deg) translateZ(9px); }
+.office-plant span:nth-of-type(2) { right: 0; top: -14px; transform: rotateX(-72deg) rotateZ(42deg) translateZ(8px); }
+.plant-one { right: 20px; top: 102px; }
+.plant-two { left: 23px; bottom: 19px; }
+.plant-three { right: 27px; bottom: 18px; transform: translateZ(13px) scale(.82); }
 
 .resource-task-card { padding: 15px; }
 .resource-task-icon { width: 36px; height: 36px; display: grid; place-items: center; color: #58748a; background: #eef3f5; border: 1px solid #dde5e8; border-radius: 9px; }
@@ -431,11 +454,8 @@ textarea:focus { border-color: #8fb8df; box-shadow: 0 0 0 3px rgba(77, 143, 216,
   .workstation-card { grid-template-columns: 72px minmax(0, 1fr) 16px; gap: 10px; padding: 11px; }
   .desk-scene { height: 64px; }
   .status-overview > div { padding-left: 9px; }
-  .office-room { height: 190px; }
-  .office-desk { transform: scale(.86) skewY(-5deg); transform-origin: center; }
-  .office-person { transform: scale(.86); transform-origin: center bottom; }
-  .office-kitchenette { transform: scale(.86); transform-origin: top left; }
-  .office-treadmill { transform: scale(.86) skewY(-8deg); transform-origin: top right; }
+  .office-room { height: 234px; }
+  .office-world { transform: translate(-50%, -48%) rotateX(58deg) rotateZ(-34deg) scale(.76); }
   .token-metrics > div { padding: 9px; }
   .office-task-stats > div { padding: 8px; }
   .mobile-access-card { grid-template-columns: 32px minmax(0, 1fr); }

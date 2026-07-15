@@ -189,23 +189,41 @@ function VirtualOfficeCard() {
         <span><i />协作空间</span>
       </div>
       <div className="office-room" aria-hidden="true">
-        <div className="office-floor-grid" />
-        <div className="office-kitchenette">
-          <div className="kitchen-cabinet"><span /><span /><span /></div>
-          <div className="kitchen-counter"><i /><b /></div>
-          <div className="kitchen-stool stool-one" />
-          <div className="kitchen-stool stool-two" />
+        <div className="office-world">
+          <div className="office-platform" />
+          <div className="office-zone kitchen-zone">Tea & Kitchen</div>
+          <div className="office-zone focus-zone">Focus Studio</div>
+          <div className="office-kitchenette">
+            <div className="kitchen-cabinet cabinet-one"><span /><span /></div>
+            <div className="kitchen-cabinet cabinet-two"><span /></div>
+            <div className="kitchen-counter"><span className="kitchen-sink" /><span className="kitchen-machine" /></div>
+            <div className="kitchen-island"><span /></div>
+            <div className="kitchen-stool stool-one" />
+            <div className="kitchen-stool stool-two" />
+          </div>
+          <div className="office-treadmill">
+            <span className="treadmill-belt" />
+            <span className="treadmill-post" />
+            <span className="treadmill-console" />
+          </div>
+          {['one', 'two', 'three', 'four'].map((desk) => (
+            <div className={`office-desk desk-${desk}`} key={desk}>
+              <span className="desk-drawer" />
+              <span className="desk-keyboard" />
+              <span className="desk-cup" />
+              <span className="office-monitor"><i /></span>
+            </div>
+          ))}
+          {['one', 'two', 'three'].map((person) => (
+            <div className={`office-seat seat-${person}`} key={person}>
+              <span className="chair-back" />
+              <span className="office-person"><i /><b /></span>
+            </div>
+          ))}
+          <div className="office-plant plant-one"><i /><span /><span /></div>
+          <div className="office-plant plant-two"><i /><span /><span /></div>
+          <div className="office-plant plant-three"><i /><span /><span /></div>
         </div>
-        <div className="office-treadmill"><span /><i /><b /></div>
-        <div className="office-desk desk-one"><i /><span /><b /></div>
-        <div className="office-desk desk-two"><i /><span /><b /></div>
-        <div className="office-desk desk-three"><i /><span /><b /></div>
-        <div className="office-desk desk-four"><i /><span /><b /></div>
-        <div className="office-person person-one"><i /><span /></div>
-        <div className="office-person person-two"><i /><span /></div>
-        <div className="office-person person-three"><i /><span /></div>
-        <div className="office-plant plant-one"><i /><span /></div>
-        <div className="office-plant plant-two"><i /><span /></div>
       </div>
     </div>
   );
