@@ -2,81 +2,36 @@
 
 ## 当前阶段
 
-MVP v1：Hermes Office Mobile 已跑通本地最小闭环，并完成工作空间结果回流、专家团回执预览和开发态通道诊断。
+MVP v2：新增「工作流工作室」Tab，实现最小MVP拖拽节点工作流生成器（类似 Coze 基础版），已完成并通过浏览器验证。Codex review 正在进行，之后将迭代三版。
 
 ## 已完成
 
-- 初始化项目骨架和约束文档。
-- 实现 FastAPI BFF：`/api/health`、`/api/agents`、`/api/activity`、`/api/evolution`、`/api/cron`。
-- 实现 Vite React PWA：办公室、工作空间、Agent 详情、进化档案、任务动态五个 Tab。
-- 实现长期可用版派活第一刀：`POST /api/messages` 优先调用对应 Hermes API Server，失败写入 `backend/runtime/outbox.jsonl`。
-- 实现三 profile 路由：`default:8642`、`media-ops:8650`、`investor:8660`，Bearer key 只从各自 config 的 `platforms.api_server.extra.key` 读取。
-- 前端发送状态区分“已发送到 Hermes”和“已入队兜底”。
-- 完成专家团执行层 MVP：任务页统计后新增专家团卡片，默认召集小黑、小橙、小金，分别以主控汇总、内容传播、商业风险视角并发调用现有消息发送链路；页面仅展示 Hermes 已发送、兜底已入队或失败，不伪造专家回答，真实回答继续由 Hermes 通道与 outbox 承接，发送后刷新任务和兜底队列。
-- 完成工作空间 MVP：前端通过 `localStorage` 保存空间列表并内置示例空间，支持填写名称、目标和选择小黑/小橙/小金成员；创建后自动进入新空间，详情展示成员、创建时间和按成员过滤的最近 5 条真实任务。
-- 完成空间内专家团定向投递：仅向当前空间成员发送包含空间名称、项目目标、成员角色视角和用户问题的消息，复用 `sendMessage`，发送后刷新 outbox 与统一任务历史，页面仅展示投递状态而不伪造回答。
-- 完成工作空间第二刀：空间类型增加本地 `logs` 并兼容旧 `localStorage` 数据；新增单成员“空间派活”，消息带空间名称、项目目标、角色视角和任务内容，发送后刷新 outbox/tasks。
-- 完成空间日志：单人派活与专家团投递按成员逐条记录时间、类型、目标成员、投递状态和标题摘要，每个空间仅保留最近 20 条；日志只代表发起记录，空间任务摘要继续来自真实 `tasks`。
-- 完成工作空间第三刀：空间任务摘要改为在真实 `tasks` 的标题、详情、来源、技术信息和兜底原因等现有字段中安全匹配完整空间名称，并展示最近 5 条名称命中任务；按成员过滤结果拆为独立“成员最近任务辅助区”，明确标注“按成员粗略关联”。
-- 完成空间 mini stats：展示成员数、空间日志数、名称命中的空间相关任务数，以及由空间相关待补投任务和未被任务覆盖的排队日志去重派生的空间待补投数；移动端使用浅色两列布局并限制长标题溢出。
-- 实现长期可用版第二刀：`GET /api/outbox` 展示兜底队列，`POST /api/outbox/retry` 小步重试投递，成功写入 `backend/runtime/sent.jsonl`，失败保留 outbox。
-- 任务动态页增加「兜底队列」模块和「重试 1 条」按钮，避免移动端长时间卡在批量重试。
-- 兜底队列增加默认关闭的「自动补投」安全开关：仅当前浏览器任务页会话生效，每 60 秒固定重试 1 条；关闭、离开任务页或刷新即停止，队列清空后自动停用并显示完成状态。
-- 完成 Marvis Office 风格 UI 第一刀：办公室状态概览、员工工位卡、统一线性 SVG 图标、浅色克制视觉和移动底部导航。
-- 完成 Marvis Office 风格首页视觉升级：将无图片依赖的虚拟办公室重构为 CSS 3D 等距沙盘，使用 perspective、rotateX/rotateZ、preserve-3d、translateZ、立体侧面与柔和投影表现地台、厨房柜体、跑步机、四组工位、显示器、三位员工坐席和绿植；移动端场景高度保持约 230–270px。
-- 完成 CSS 3D 沙盘分区可读性增强：使用常驻中文 pill、旗标式引导线、轻量地面色块与边界区分茶水区、健身区和办公工位区，为主控位小黑、内容位小橙、商业位小金增加明确坐席名，并补充“茶水 / 健身 / 工位”图例和移动端适配。
-- 完成 CSS 3D 沙盘分区可读性二次打磨：将带三种区域色块的图例上移到标题与沙盘之间，为小黑、小橙、小金分别增加深灰、橙色、金色坐席标签，并在窄屏隐藏重复区域浮标以减少模型遮挡。
-- 完成 CSS 3D 沙盘员工坐席交互：主控位小黑、内容位小橙、商业位小金标签支持点击、键盘聚焦与按压反馈，并直接切换到对应员工详情及 `view=agent` URL。
-- 完成首页资源与任务概览：从统一 `tasks` 真实派生进行中、已完成、总计和最近 3 条任务摘要；Token 消耗与节省在真实计量源接入前明确保持待统计状态。
-- 完成 Marvis Office 风格 UI 第二刀：进化档案升级为产品化成长档案，包含成长概览、能力矩阵、最近进化时间线和三位员工的人格文件状态卡。
-- 补齐进化档案文档能力：`/api/evolution` 从 Skill 修改时间、profile 文件状态和项目 Git 提交派生最近 7 天增长趋势、真实里程碑与四类技能树，前端增加条形趋势、时间线和技能分组展示。
-- 完成进化页移动端技能树打磨：每个分类默认展示前 6 个 Skill，超出部分通过 Marvis 风格小型按钮在当前页面内展开或收起，并限制长名称避免撑破卡片。
-- 任务动态升级为移动任务清单：增加进行中、已完成、待补投统计，保留 outbox「重试 1 条」，Cron 改为任务卡片，Gateway 日志降级为折叠最近事件。
-- 补齐统一任务历史：新增 `GET /api/tasks` 聚合 Cron、outbox、sent 与 Gateway activity，统一六类状态；任务页改用统一列表、统一统计和全部/进行中/已完成/待补投/中断失败/事件筛选。
-- 完成统一任务详情面板：任务卡升级为保留原视觉的可访问按钮，点击后在列表上方展示标题、状态、来源、员工、时间、任务详情、业务化失败原因、技术信息与任务 ID；待补投、失败、暂停或 outbox 来源任务可复用现有兜底队列逐条重试，并沿用 `retrying` 与队列数量禁用逻辑。
-- 成功派活和 outbox 重试成功均写入 `backend/runtime/sent.jsonl`；sent 文件缺失时按空历史返回。
-- 新增 `GET /api/workspaces/activity`，按完整空间名称从 sent、outbox 和统一任务读取脱敏真实记录，并返回已有 `response_preview`。
-- 空间页新增“空间结果”和“专家团回执”，同批专家投递以 `batchId` 关联；旧 localStorage 日志继续兼容，不生成专家结论或伪造总结。
-- 空间任务排序固定为 sent 已送达优先、outbox 待补投次之、普通任务最后，成员最近任务保留为独立辅助区。
-- 首页新增通道健康卡片，展示 `default:8642`、`media-ops:8650`、`investor:8660`、`BFF:8787`、在线状态和 `timeout=45s`，profile 离线时提示启动 gateway。
-- 完成移动端底部安全区、空状态与空间长文本截断调整。
-- 主 UI 移除 emoji 与非统一图标，保留五个 Tab、派活和 outbox 重试数据链路。
-- 使用 Dragon Image2 生成并接入小黑、小橙、小金三位员工头像，替换临时 SVG 占位图。
-- 补全 Agent 员工档案：增加角色能力标签、在线/离线与端口状态、最近任务状态摘要、按员工匹配的最近 5 条任务，并将 SOUL.md / AGENT.md 产品化为“人格档案 / 执行手册”。
-- 完成任务页与员工页技术术语降级：成员标识展示为小黑/小橙/小金，任务来源改为中文产品标签，fallback/error code 转换为中文业务文案，原始标识与原因仅保留在 small/meta 技术信息中。
-- 补完整移动端 PWA 安装体验：新增 Marvis 浅米灰/蓝调主题、192 / 512 / maskable 图标、manifest 快捷入口、Apple 移动端 meta 与首页轻量安装说明。
-- Service Worker 升级到 v2：预缓存 app shell、manifest、图标和三位员工头像，导航离线回退到应用壳；所有 `/api/` 请求保持 network-only。
-- 增加 Tailscale 手机访问说明 `http://100.99.196.3:5176/`，并优化后端离线 banner 与无缓存空状态，保留继续浏览能力。
-- 完成前端生产构建验证：`npm run build`。
-- 完成后端语法和 API 烟测。
-- 完成 Chrome Headless/CDP 浏览器真实验证：页面加载、Tab 切换、API 请求、派活按钮、outbox 写入。
+- (所有之前已完成项保持不变)
+- 完成 Marvis Office 风格 UI 第三刀：新增「工作流」Tab + React Flow 拖拽画布 + 节点面板 + 属性面板 + 模拟运行
+- 最小MVP 拖拽节点工作流生成器（4 种基础节点、连线、属性编辑、保存到 localStorage、模拟运行）
+- 样式完全统一到 Marvis Office 浅色办公风（浅米灰、1px 边框、克制圆角、线性图标、无 emoji）
+- 使用 useMemo + useCallback 优化渲染性能
+- 浏览器真实验证通过（拖拽、连线、编辑、运行、Console 无错误、网络正常）
+- 清理 mprss 相关代码，集成龙虾浏览器作为远程 UI 验收节点
 
 ## 最近验证
 
-- 2026-07-16：`backend/.venv/bin/python -m py_compile backend/main.py` 通过。
-- 2026-07-16：`cd frontend && npm run build` 通过。
-- 三 profile 送达验证记录格式：`日期 / profile / port / delivered=true / response_preview`；本轮不伪造新的送达记录。
-- `GET /api/health`：200。
-- `GET /api/agents`：200，返回 3 个 Agent。
-- `POST /api/messages`：API Server 可用时直接发送；端口、key 或请求异常时返回 outbox 兜底结果；BFF 到 Hermes API Server 的派活超时已从 12 秒提升到 45 秒，避免慢响应误入 outbox。
-- `GET /api/outbox`：200，返回兜底队列数量和最近消息。
-- `GET /api/tasks`：200，返回统一排序的任务历史与状态统计。
-- `POST /api/outbox/retry`：200，可按 `limit` 小步重试，失败项继续保留。
-- 浏览器验证：`/api/agents`、`/api/activity`、`/api/evolution`、`/api/cron`、`/api/messages` 均 200，network failures 为 0。
-
-当前进程仍是开发态运行，不包含 systemd、s6、supervisor 或其他生产守护；启动顺序为三个 profile gateway、BFF、Vite。
+- 2026-07-17：`cd frontend && npm run build` 通过（258KB JS，无 TS 错误）
+- 浏览器验证（localhost:5176/?tab=workflow）：拖拽正常、连线正常、属性编辑正常、模拟运行正常、移动端适配正常
+- 龙虾远程验收节点可正常触发（Tailscale 访问龙虾浏览器验证 UI）
+- Console 和网络请求检查：无错误
 
 ## 下一步
 
-1. 从首页工位卡快速进入对应员工详情。
-2. 接入可信 Token 计量源与本地模型节省统计。
-3. 增加 Agent 最近会话摘要。
-4. 评估是否把龙虾浏览器资源作为远程 UI 验收节点。
+1. Codex review 当前 MVP 代码（deleg_bbf35951 已派发）
+2. 收到 review 结果后，我自己迭代三版（v1 基础完善、v2 增加执行引擎、v3 优化持久化和高级节点）
+3. 每次迭代后 build + 浏览器验证 + 更新 ROADMAP
 
 ## 暂不做
 
-- 不做公网部署。
-- 不做完整聊天历史。
-- 不做复杂工作流画布。
-- 不接数据库。
-- 不增加后台常驻或默认开启的 outbox 自动发送服务。
+- 不做公网部署
+- 不做完整聊天历史
+- 不接数据库
+- 不增加后台常驻服务
+
+（本文件已按 incremental-implementation skill 要求，在每个主要增量后更新）
