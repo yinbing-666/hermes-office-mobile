@@ -469,7 +469,7 @@ function OfficePage({ agents, tasks, channels, selectedId, setSelectedId, onSele
   );
 }
 
-function AgentPage({ agent, tasks, evolution }: { agent?: AgentInfo; tasks: TaskItem[]; evolution: EvolutionData }) {
+function AgentPage({ agent, tasks, evolution, cameFromOffice, onBack }: { agent?: AgentInfo; tasks: TaskItem[]; evolution: EvolutionData; cameFromOffice?: boolean; onBack?: () => void }) {
   const [message, setMessage] = useState('');
   const [sending, setSending] = useState(false);
   const [sendStatus, setSendStatus] = useState<{ type: 'sent' | 'error'; text: string } | null>(null);
@@ -524,8 +524,22 @@ function AgentPage({ agent, tasks, evolution }: { agent?: AgentInfo; tasks: Task
     }
   }
 
+  const shouldShowBack = Boolean(cameFromOffice && onBack);
+  const handleBack = () => {
+    if (!onBack) return;
+    onBack();
+  };
+
   return (
-    <section className="page-section">
+    <section className={`page-section agent-page-slide${cameFromOffice ? ' slide-in' : ''}`}>
+      {shouldShowBack && (
+        <div className="agent-back-wrap">
+          <button className="agent-back-btn" type="button" onClick={handleBack}>
+            <OfficeIcon name="chevron" size={16} />
+            <span>返回办公室</span>
+          </button>
+        </div>
+      )}
       <div className="detail-card employee-hero">
         <div className="employee-identity">
           <AgentPortrait tone={meta.tone} avatar={meta.avatar} name={agent.name} large />
@@ -1362,11 +1376,15 @@ function ActivityPage({ tasks, outbox, onExpertPanelSubmit, onRetryOutbox, retry
 
 export default function App() {
   const [tab, setTab] = useState<Tab>(() => {
-    const view = new URLSearchParams(window.location.search).get('view');
+    const params = new URLSearchParams(window.location.search);
+    const view = params.get('view');
     return tabs.some((item) => item.key === view) ? view as Tab : 'office';
   });
   const [agents, setAgents] = useState<AgentInfo[]>([]);
-  const [selectedId, setSelectedId] = useState('default');
+  const [selectedId, setSelectedId] = useState(() => {
+    const params = new URLSearchParams(window.location.search);
+    return params.get('id') || 'default';
+  });
   const [evolution, setEvolution] = useState<EvolutionData>({});
   const [tasks, setTasks] = useState<TaskItem[]>([]);
   const [outbox, setOutbox] = useState<OutboxData>({ count: 0, items: [] });
@@ -1378,6 +1396,7 @@ export default function App() {
   const [offline, setOffline] = useState(false);
   const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null);
   const [installed, setInstalled] = useState(() => window.matchMedia('(display-mode: standalone)').matches || Boolean((navigator as Navigator & { standalone?: boolean }).standalone));
+  const [cameFromOffice, setCameFromOffice] = useState(false);
   const retryingRef = useRef(false);
 
   useEffect(() => {
@@ -1394,6 +1413,21 @@ export default function App() {
       setOffline(agentRes.offline || evolutionRes.offline || taskRes.offline || outboxRes.offline);
     });
   }, []);
+
+  // URL sync for agent view on load
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const view = params.get('view');
+    const id = params.get('id');
+
+    if (view === 'agent' && id) {
+      if (agents.some(a => a.id === id)) {
+        setSelectedId(id);
+        setTab('agent');
+        setCameFromOffice(true);
+      }
+    }
+  }, [agents]);
 
   useEffect(() => {
     fetchChannelHealth().then(setChannels).catch(() => setChannels([]));
@@ -1564,6 +1598,7 @@ export default function App() {
     const url = new URL(window.location.href);
     if (nextTab === 'office') url.searchParams.delete('view');
     else url.searchParams.set('view', nextTab);
+    url.searchParams.delete('id');
     window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
   }
 
@@ -1589,7 +1624,7 @@ export default function App() {
       <OfflineBanner show={offline} />
       {tab === 'office' && <OfficePage agents={agents} tasks={tasks} channels={channels} selectedId={selectedId} setSelectedId={setSelectedId} onSelectAgent={handleSelectAgentFromOffice} pending={outbox.count} backendOffline={offline} installPrompt={installPrompt} installed={installed} onInstall={handleInstall} />}
       {tab === 'workspace' && <WorkspacePage tasks={tasks} onDispatch={handleWorkspaceDispatch} onExpertSubmit={handleWorkspaceExpertSubmit} />}
-      {tab === 'agent' && <AgentPage agent={selectedAgent} tasks={tasks} evolution={evolution} />}
+      {tab === 'agent' && <AgentPage agent={selectedAgent} tasks={tasks} evolution={evolution} cameFromOffice={cameFromOffice} onBack={() => { setTab('office'); setCameFromOffice(false); const url = new URL(window.location.href); url.searchParams.delete('view'); url.searchParams.delete('id'); window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`); }} />}
       {tab === 'evolution' && <EvolutionPage evolution={evolution} />}
       {tab === 'activity' && <ActivityPage tasks={tasks} outbox={outbox} onExpertPanelSubmit={handleExpertPanelSubmit} onRetryOutbox={handleRetryOutbox} retryStatus={retryStatus} retrying={retrying} autoRetryEnabled={autoRetryEnabled} autoRetryReport={autoRetryReport} onToggleAutoRetry={handleToggleAutoRetry} />}
       <nav className="tabbar" aria-label="主导航">

@@ -736,3 +736,10 @@ input:focus { border-color: #8fb8df; box-shadow: 0 0 0 3px rgba(77, 143, 216, .0
   .tabbar button { font-size: 8px; }
   .tabbar button .office-icon { width: 19px; height: 19px; }
 }
+
+.agent-page-slide { transform: translateX(0); opacity: 1; transition: transform 300ms cubic-bezier(.4,0,.2,1), opacity 280ms ease; }
+.slide-in { animation: slideInOffice 300ms cubic-bezier(.4,0,.2,1) both; }
+@keyframes slideInOffice { from { transform: translateX(18px); opacity: .92; } to { transform: translateX(0); opacity: 1; } }
+.agent-back-wrap { margin-bottom: 10px; }
+.agent-back-btn { display: inline-flex; align-items: center; gap: 6px; padding: 8px 10px; color: #5c4a2f; background: #f7f5f0; border: 1px solid #e3dfd6; border-radius: 10px; font-size: 11px; font-weight: 600; }
+.agent-back-btn:active { background: #eeebe4; }
