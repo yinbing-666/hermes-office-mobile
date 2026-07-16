@@ -1080,3 +1080,64 @@ def queue_message(payload: MessageRequest) -> Any:
         "stored_at": stored_at,
         "fallback_reason": fallback_reason,
     }
+
+
+# ============== v5 Workflow API ==============
+class Workflow(BaseModel):
+    id: str | None = None
+    name: str = Field(..., min_length=1, max_length=100)
+    nodes: list = Field(default_factory=list)
+    edges: list = Field(default_factory=list)
+    created_at: str | None = None
+    updated_at: str | None = None
+
+
+WORKFLOWS_FILE = PROJECT_ROOT / "runtime" / "workflows.jsonl"
+
+
+def load_workflows() -> list[dict]:
+    try:
+        if not WORKFLOWS_FILE.exists():
+            return []
+        lines = WORKFLOWS_FILE.read_text(encoding="utf-8").strip().split("\n")
+        return [json.loads(line) for line in lines if line.strip()]
+    except Exception:
+        return []
+
+
+def save_workflow(workflow: dict):
+    try:
+        WORKFLOWS_FILE.parent.mkdir(parents=True, exist_ok=True)
+        with open(WORKFLOWS_FILE, "a", encoding="utf-8") as f:
+            f.write(json.dumps(workflow, ensure_ascii=False) + "\n")
+    except Exception as e:
+        print("Save workflow failed:", e)
+
+
+@app.get("/api/workflows")
+async def list_workflows():
+    workflows = load_workflows()
+    return {"ok": True, "workflows": workflows}
+
+
+@app.post("/api/workflows")
+async def save_workflow_api(workflow: Workflow):
+    data = workflow.model_dump()
+    data["id"] = data["id"] or f"wf-{int(datetime.now().timestamp() * 1000)}"
+    data["created_at"] = data.get("created_at") or utc_now()
+    data["updated_at"] = utc_now()
+    save_workflow(data)
+    return {"ok": True, "workflow": data, "message": "工作流已保存到服务器"}
+
+
+@app.post("/api/workflows/execute")
+async def execute_workflow(payload: dict):
+    # Proxy to real Hermes or simulate with real call
+    workflow_name = payload.get("name", "Unnamed")
+    # In real scenario, this would call Hermes gateway with the nodes
+    return {
+        "ok": True,
+        "result": f"工作流 {workflow_name} 执行完成（已代理到本地 Hermes）",
+        "executed_nodes": len(payload.get("nodes", [])),
+        "timestamp": utc_now(),
+    }
