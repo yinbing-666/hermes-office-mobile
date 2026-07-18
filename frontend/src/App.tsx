@@ -2,9 +2,8 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { fetchAgents, fetchEvolution, fetchOutbox, fetchTasks, retryOutbox, sendMessage } from './api';
 import { OfficeIcon, type OfficeIconName } from './components/OfficeIcon';
 import type { AgentInfo, EvolutionData, OutboxData, TaskItem, TaskStatus } from './types';
-import { WorkflowPage } from './WorkflowPage';
 
-type Tab = 'office' | 'workspace' | 'agent' | 'evolution' | 'activity' | 'workflow';
+type Tab = 'office' | 'workspace' | 'agent' | 'evolution' | 'activity';
 type BeforeInstallPromptEvent = Event & {
   prompt: () => Promise<void>;
   userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }>;
@@ -74,7 +73,6 @@ const tabs: Array<{ key: Tab; label: string; icon: OfficeIconName }> = [
   { key: 'agent', label: '员工', icon: 'agent' },
   { key: 'evolution', label: '进化', icon: 'growth' },
   { key: 'activity', label: '任务', icon: 'activity' },
-  { key: 'workflow', label: '工作流', icon: 'activity' },
 ];
 
 function createDefaultWorkspace(): Workspace {
@@ -354,7 +352,7 @@ function VirtualOfficeCard({ onSelectAgent }: { onSelectAgent: (agentId: string)
 function ResourceTaskOverview({ tasks }: { tasks: TaskItem[] }) {
   const runningCount = tasks.filter((task) => task.status === 'running').length;
   const completedCount = tasks.filter((task) => task.status === 'completed').length;
-  const recentTasks = tasks.slice(0, 3);
+  const recentTasks = tasks.slice(0, 8);
 
   return (
     <div className="resource-task-card">
@@ -471,7 +469,7 @@ function OfficePage({ agents, tasks, channels, selectedId, setSelectedId, onSele
   );
 }
 
-function AgentPage({ agent, tasks, evolution, cameFromOffice, onBack }: { agent?: AgentInfo; tasks: TaskItem[]; evolution: EvolutionData; cameFromOffice?: boolean; onBack?: () => void }) {
+function AgentPage({ agents, selectedId, onSelectAgent, agent, tasks, evolution, cameFromOffice, onBack }: { agents: AgentInfo[]; selectedId: string; onSelectAgent: (id: string) => void; agent?: AgentInfo; tasks: TaskItem[]; evolution: EvolutionData; cameFromOffice?: boolean; onBack?: () => void }) {
   const [message, setMessage] = useState('');
   const [sending, setSending] = useState(false);
   const [sendStatus, setSendStatus] = useState<{ type: 'sent' | 'error'; text: string } | null>(null);
@@ -557,6 +555,37 @@ function AgentPage({ agent, tasks, evolution, cameFromOffice, onBack }: { agent?
         </div>
         <div className="capability-tags" aria-label={`${agent.name}能力标签`}>
           {meta.tags.map((tag) => <span key={tag}>{tag}</span>)}
+        </div>
+      </div>
+
+      <div className="employee-section-card">
+        <div className="employee-section-head">
+          <div className="employee-section-icon"><OfficeIcon name="agent" size={18} /></div>
+          <div><span>Team Directory</span><h3>员工目录</h3></div>
+          <small>{agents.length} 位</small>
+        </div>
+        <div className="workspace-member-options" role="tablist" aria-label="切换员工">
+          {agents.map((item) => {
+            const itemMeta = roleMap[item.id] ?? fallbackRole;
+            const selected = item.id === selectedId;
+            return (
+              <button
+                key={item.id}
+                type="button"
+                role="tab"
+                aria-selected={selected}
+                className={selected ? 'selected' : ''}
+                onClick={() => onSelectAgent(item.id)}
+              >
+                <i className={item.id} />
+                <span>
+                  <strong>{item.name}</strong>
+                  <small>{itemMeta.role}</small>
+                </span>
+                <OfficeIcon name={selected ? 'check' : 'user'} size={15} />
+              </button>
+            );
+          })}
         </div>
       </div>
 
@@ -1604,12 +1633,18 @@ export default function App() {
     window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
   }
 
-  function handleSelectAgentFromOffice(agentId: string) {
+  function handleSelectAgent(agentId: string) {
     setSelectedId(agentId);
     setTab('agent');
     const url = new URL(window.location.href);
     url.searchParams.set('view', 'agent');
+    url.searchParams.set('id', agentId);
     window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
+  }
+
+  function handleSelectAgentFromOffice(agentId: string) {
+    setCameFromOffice(true);
+    handleSelectAgent(agentId);
   }
 
   const pageTitle = tabs.find((item) => item.key === tab)?.label ?? '办公室';
@@ -1626,10 +1661,9 @@ export default function App() {
       <OfflineBanner show={offline} />
       {tab === 'office' && <OfficePage agents={agents} tasks={tasks} channels={channels} selectedId={selectedId} setSelectedId={setSelectedId} onSelectAgent={handleSelectAgentFromOffice} pending={outbox.count} backendOffline={offline} installPrompt={installPrompt} installed={installed} onInstall={handleInstall} />}
       {tab === 'workspace' && <WorkspacePage tasks={tasks} onDispatch={handleWorkspaceDispatch} onExpertSubmit={handleWorkspaceExpertSubmit} />}
-      {tab === 'agent' && <AgentPage agent={selectedAgent} tasks={tasks} evolution={evolution} cameFromOffice={cameFromOffice} onBack={() => { setTab('office'); setCameFromOffice(false); const url = new URL(window.location.href); url.searchParams.delete('view'); url.searchParams.delete('id'); window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`); }} />}
+      {tab === 'agent' && <AgentPage agents={agents} selectedId={selectedId} onSelectAgent={handleSelectAgent} agent={selectedAgent} tasks={tasks} evolution={evolution} cameFromOffice={cameFromOffice} onBack={() => { setTab('office'); setCameFromOffice(false); const url = new URL(window.location.href); url.searchParams.delete('view'); url.searchParams.delete('id'); window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`); }} />}
       {tab === 'evolution' && <EvolutionPage evolution={evolution} />}
       {tab === 'activity' && <ActivityPage tasks={tasks} outbox={outbox} onExpertPanelSubmit={handleExpertPanelSubmit} onRetryOutbox={handleRetryOutbox} retryStatus={retryStatus} retrying={retrying} autoRetryEnabled={autoRetryEnabled} autoRetryReport={autoRetryReport} onToggleAutoRetry={handleToggleAutoRetry} />}
-      {tab === 'workflow' && <WorkflowPage />}
       <nav className="tabbar" aria-label="主导航">
         {tabs.map(({ key, label, icon }) => (
           <button key={key} className={tab === key ? 'selected' : ''} onClick={() => handleTabChange(key)}>

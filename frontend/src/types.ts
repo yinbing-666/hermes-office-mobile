@@ -3,6 +3,7 @@ export type AgentId = 'default' | 'media-ops' | 'investor' | string;
 export interface AgentInfo {
   id: AgentId;
   name: string;
+  profile_path?: string;
   profile_available?: boolean;
   status: 'online' | 'offline' | 'busy' | string;
   port?: number;
