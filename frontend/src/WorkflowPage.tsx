@@ -104,33 +104,33 @@ export function WorkflowPage() {
     if (isRunning) return;
     setIsRunning(true);
     setLog([]);
-    addToLog('🚀 工作流开始执行 (v4)');
+    addToLog('模拟运行开始：不会真正调用 Hermes');
 
     const sortedNodes = [...nodes].sort((a, b) => a.y - b.y || a.x - b.x);
-    
+
     for (const node of sortedNodes) {
       setCurrentRunningNode(node.id);
-      addToLog(`执行 ${node.label} (${node.type})`);
-      
+      addToLog(`模拟节点 ${node.label} (${node.type})`);
+
       if (node.type === 'weixin') {
-        addToLog('📤 调用本地 Hermes Weixin Gateway (已连接)');
+        addToLog('模拟：微信 Gateway 节点（未真实调用）');
       } else if (node.type === 'hermes_call') {
-        addToLog(`🔗 调用 Hermes Skill: ${node.prompt || 'default'}`);
+        addToLog(`模拟：Hermes 调用 ${node.prompt || 'default'}（未真实调用）`);
       } else if (node.type === 'llm') {
-        addToLog(`🤖 LLM Prompt: ${node.prompt?.substring(0, 35)}...`);
+        addToLog(`模拟：LLM Prompt ${node.prompt?.substring(0, 35) || ''}...（未真实调用）`);
       } else if (node.type === 'condition') {
-        addToLog('🔀 条件判断 (模拟通过)');
+        addToLog('模拟：条件判断通过');
       }
-      
-      await new Promise(r => setTimeout(r, 420)); // 模拟延迟
+
+      await new Promise(r => setTimeout(r, 280));
     }
-    
+
     setCurrentRunningNode(null);
-    addToLog('✅ 工作流执行完成 (v4 优化版)');
+    addToLog('模拟运行完成：当前 mode=simulated');
     setIsRunning(false);
-    
-    alert('v4 工作流运行完成！\n\n新增特性：\n• 贝塞尔平滑连线\n• 端口式拖拽连接\n• 微信/Hermes/Condition 节点\n• 实时执行日志面板\n• 网格吸附 + JSON 导入导出\n• 当前节点高亮');
-  }, [nodes, isRunning]);
+
+    alert('工作流模拟运行完成\n\n当前不会调用 Hermes / outbox\n真实执行引擎会在下一版接入');
+  }, [nodes, isRunning, addToLog]);
 
   const exportWorkflow = useCallback(() => {
     const data = { nodes, edges, version: 'v4' };
@@ -250,13 +250,13 @@ export function WorkflowPage() {
     <div className="workflow-studio" style={{ height: 'calc(100vh - 140px)', display: 'flex', flexDirection: 'column', background: '#f8f6f3' }}>
       <div className="toolbar" style={{ padding: '10px 16px', background: '#f0ede8', borderBottom: '1px solid #e8e6e1', display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
         <button onClick={runWorkflow} disabled={isRunning} style={{ padding: '9px 22px', background: isRunning ? '#999' : '#477fac', color: 'white', border: 'none', borderRadius: '8px', fontWeight: 700, cursor: isRunning ? 'not-allowed' : 'pointer' }}>
-          {isRunning ? '执行中...' : '运行工作流 (v4)'}
+          {isRunning ? '模拟中...' : '模拟运行'}
         </button>
         <button onClick={exportWorkflow} style={{ padding: '9px 16px', background: '#e8e6e1', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 500 }}>导出 JSON</button>
         <button onClick={importWorkflow} style={{ padding: '9px 16px', background: '#e8e6e1', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 500 }}>导入 JSON</button>
         <button onClick={() => { setNodes(initialNodes); setEdges([]); setLog([]); localStorage.removeItem('workflow-nodes-v4'); localStorage.removeItem('workflow-edges-v4'); }} style={{ padding: '9px 16px', background: '#fce8e6', color: '#b3261e', border: 'none', borderRadius: '8px', cursor: 'pointer' }}>清空画布</button>
-        
-        <div style={{ marginLeft: 'auto', fontSize: '13px', color: '#137333', fontWeight: 600 }}>v4 优化版 • 贝塞尔连线 • 端口拖拽 • 微信/Hermes 节点 • 实时日志 • 网格吸附</div>
+
+        <div style={{ flex: '1 1 120px', minWidth: '112px', textAlign: 'center', fontSize: '11px', color: '#8a6d3b', fontWeight: 650, background: '#fff8e8', border: '1px solid #edd9a8', borderRadius: '999px', padding: '4px 8px' }}>模拟模式 · 未调用 Hermes</div>
       </div>
 
       <div style={{ display: 'flex', flex: 1, minHeight: 0, position: 'relative' }}>
@@ -496,15 +496,15 @@ export function WorkflowPage() {
               lineHeight: 1.55,
               whiteSpace: 'pre-wrap'
             }}>
-              {log.length > 0 ? log.join('\n') : '点击「运行工作流」开始模拟执行...'}
+              {log.length > 0 ? log.join('\n') : '点击「模拟运行」开始本地模拟，不会调用 Hermes...'}
             </div>
           </div>
         </div>
       </div>
 
-      <div style={{ height: '46px', background: '#f0ede8', borderTop: '1px solid #e8e6e1', display: 'flex', alignItems: 'center', padding: '0 24px', fontSize: '13px', color: '#137333', justifyContent: 'space-between' }}>
-        <div>节点: {nodes.length} | 连线: {edges.length} | 已自动保存到 localStorage</div>
-        <div style={{ fontWeight: 600 }}>hermes-office-mobile • Workflow v4 • 浏览器验证通过 • 已支持微信 Gateway 节点</div>
+      <div style={{ minHeight: '46px', background: '#f0ede8', borderTop: '1px solid #e8e6e1', display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 12px', fontSize: '11px', color: '#137333', justifyContent: 'space-between', flexWrap: 'wrap' }}>
+        <div style={{ minWidth: 0 }}>节点: {nodes.length} | 连线: {edges.length} | localStorage 草稿</div>
+        <div style={{ fontWeight: 600, minWidth: 0 }}>Workflow v4 · 模拟模式 · 未调用 Hermes</div>
       </div>
     </div>
   );

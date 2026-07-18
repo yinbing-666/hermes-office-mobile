@@ -2,13 +2,16 @@
 
 ## 当前阶段
 
-MVP v2：新增「工作流工作室」Tab，实现最小MVP拖拽节点工作流生成器（类似 Coze 基础版），已完成并通过浏览器验证。Codex review 正在进行，之后将迭代三版。
+MVP v2.1：根据 Grok review 完成第一轮“接线与诚实”修复。工作流已接入主导航，但当前明确为模拟模式；后端保存从 append-only jsonl 改为按 id upsert 的 `workflows.json`，执行接口返回 `mode: simulated`，不再伪装已代理到 Hermes。
 
 ## 已完成
 
 - (所有之前已完成项保持不变)
-- 完成 Marvis Office 风格 UI 第三刀：新增「工作流」Tab + React Flow 拖拽画布 + 节点面板 + 属性面板 + 模拟运行
-- 最小MVP 拖拽节点工作流生成器（4 种基础节点、连线、属性编辑、保存到 localStorage、模拟运行）
+- 完成 Marvis Office 风格 UI 第三刀：新增「工作流」Tab + 拖拽画布 + 节点面板 + 属性面板 + 模拟运行
+- 最小MVP 拖拽节点工作流生成器（节点、连线、属性编辑、localStorage 草稿缓存、模拟运行）
+- 工作流已接入主导航，入口不再悬空
+- 后端 `POST /api/workflows` 改为按 id upsert 保存到 `workflows.json`，兼容旧 `workflows.jsonl`
+- 后端 `POST /api/workflows/execute` 明确返回 `mode: simulated`，不会伪装真实调用 Hermes
 - 样式完全统一到 Marvis Office 浅色办公风（浅米灰、1px 边框、克制圆角、线性图标、无 emoji）
 - 使用 useMemo + useCallback 优化渲染性能
 - 浏览器真实验证通过（拖拽、连线、编辑、运行、Console 无错误、网络正常）
@@ -23,9 +26,9 @@ MVP v2：新增「工作流工作室」Tab，实现最小MVP拖拽节点工作�
 
 ## 下一步
 
-1. Codex review 当前 MVP 代码（deleg_bbf35951 已派发）
-2. 收到 review 结果后，我自己迭代三版（v1 基础完善、v2 增加执行引擎、v3 优化持久化和高级节点）
-3. 每次迭代后 build + 浏览器验证 + 更新 ROADMAP
+1. v2：实现最小真实执行引擎，只接 `start → hermes_call → end`，复用现有 `POST /api/messages`、sent/outbox 和任务动态。
+2. v3：增加工作流版本管理、专家团节点、空间上下文注入和简单并行节点。
+3. 每次迭代后 build + API 烟测 + 浏览器验证 + 更新 ROADMAP。
 
 ## 暂不做
 

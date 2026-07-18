@@ -15,7 +15,8 @@
 - 通道健康：首页展示 `default:8642`、`media-ops:8650`、`investor:8660`、`BFF:8787` 的在线状态、端口和 `timeout=45s`；profile 离线时提示“需要启动 profile gateway”。
 - 进化档案：保留成长概览、能力矩阵和员工档案卡，并展示最近 7 天能力增长条形趋势、真实 Git / 档案 / Skill 里程碑，以及消息处理、知识管理、开发执行、自动化四类技能树；每类默认展示前 6 个 Skill，可在当前页面内展开更多或收起，缺失项明确显示暂无或待记录。
 - 任务动态：通过 `GET /api/tasks` 聚合 Cron、outbox、sent 与 Gateway activity，统一展示进行中、已完成、待补投、失败/暂停和事件状态；任务卡支持点击打开移动端详情面板，展示标题、状态、来源、员工、时间、现有任务详情、业务化失败原因、技术信息和任务 ID。待补投、失败、暂停或 outbox 来源任务可从详情面板复用兜底队列“逐条重试”，页面不推断或伪造任务结果。成员标识转换为小黑/小橙/小金，来源产品化为定时任务/兜底队列/已送达/网关事件，原始标识与原因仅保留在技术信息中。
-- 移动导航：提供办公室、空间、员工、进化、任务五个 Tab，使用统一线性图标、浅蓝选中态和窄屏安全布局。
+- 工作流工作室 MVP：新增“工作流”Tab，接入最小拖拽节点画布，支持节点添加、连线、属性编辑、JSON 导入导出和本地草稿缓存。当前运行模式明确标记为“模拟模式”，不会真正调用 Hermes API Server 或 outbox；真实执行引擎将在下一版接入。
+- 工作流服务端持久化：`GET /api/workflows` 返回按 `id` 去重后的工作流列表；`POST /api/workflows` 使用 upsert 语义写入 `backend/runtime/workflows.json`，并兼容迁移旧版 `workflows.jsonl`。`POST /api/workflows/execute` 当前只返回 `mode: "simulated"`，避免把模拟运行误写成真实执行。
 - PWA 安装：提供 192 / 512 / maskable 图标、办公室与任务快捷入口，以及 Android 安装提示和 iOS“添加到主屏幕”说明。
 - 离线浏览：Service Worker 缓存 app shell、manifest、图标和员工头像；API 始终 network-only，后端不可用时前端明确展示离线缓存或模拟数据并允许继续浏览。
 

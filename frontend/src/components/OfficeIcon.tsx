@@ -1,4 +1,4 @@
-export type OfficeIconName = 'office' | 'workspace' | 'agent' | 'growth' | 'activity' | 'monitor' | 'coffee' | 'file' | 'search' | 'message' | 'database' | 'refresh' | 'check' | 'alert' | 'user' | 'terminal' | 'clock' | 'send' | 'chevron';
+export type OfficeIconName = 'office' | 'workspace' | 'agent' | 'growth' | 'activity' | 'workflow' | 'monitor' | 'coffee' | 'file' | 'search' | 'message' | 'database' | 'refresh' | 'check' | 'alert' | 'user' | 'terminal' | 'clock' | 'send' | 'chevron';
 
 const paths: Record<OfficeIconName, string[]> = {
   office: ['M8 22V9l8-4 8 4v13', 'M5 22h22', 'M12 22v-7h8v7', 'M11 11h2M19 11h2'],
@@ -6,6 +6,7 @@ const paths: Record<OfficeIconName, string[]> = {
   agent: ['M12 7h8a5 5 0 0 1 5 5v5a5 5 0 0 1-5 5h-8a5 5 0 0 1-5-5v-5a5 5 0 0 1 5-5Z', 'M16 7V4', 'M12 14h.01M20 14h.01', 'M13 18h6'],
   growth: ['M16 25V12', 'M16 12c-4 0-7-2-8-6 5 0 8 2 8 6Z', 'M16 16c4 0 7-2 8-6-5 0-8 2-8 6Z'],
   activity: ['M7 7h18v18H7Z', 'M11 12h10M11 17h10M11 22h6'],
+  workflow: ['M8 10h6v6H8Z', 'M18 16h6v6h-6Z', 'M14 13h4', 'M21 16V10h-5'],
   monitor: ['M6 7h20v13H6Z', 'M12 25h8', 'M16 20v5'],
   coffee: ['M9 11h12v5a6 6 0 0 1-6 6 6 6 0 0 1-6-6v-5Z', 'M21 13h2a3 3 0 0 1 0 6h-2', 'M11 7v-2M16 7v-2'],
   file: ['M10 5h8l5 5v17H10Z', 'M18 5v6h5', 'M13 16h7M13 21h7'],

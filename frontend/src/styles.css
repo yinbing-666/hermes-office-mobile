@@ -660,10 +660,11 @@ input:focus { border-color: #8fb8df; box-shadow: 0 0 0 3px rgba(77, 143, 216, .0
 .recent-event-list div:last-child { border-bottom: 0; }
 .recent-event-list p { margin: 10px 0 0; font-size: 11px; }
 
-.tabbar { position: fixed; left: 50%; bottom: max(10px, env(safe-area-inset-bottom)); transform: translateX(-50%); width: min(calc(100vw - 20px), 460px); display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); padding: 5px; background: rgba(255, 255, 255, .96); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 5px 18px rgba(32, 37, 43, .07); backdrop-filter: blur(14px); }
-.tabbar button { min-width: 0; display: grid; place-items: center; gap: 3px; padding: 7px 2px 6px; color: #818891; background: transparent; border-radius: 8px; font-size: 9px; font-weight: 500; }
+.tabbar { position: fixed; left: 50%; bottom: max(10px, env(safe-area-inset-bottom)); transform: translateX(-50%); width: min(calc(100vw - 8px), 468px); display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); padding: 4px; background: rgba(255, 255, 255, .96); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 5px 18px rgba(32, 37, 43, .07); backdrop-filter: blur(14px); }
+.tabbar button { min-width: 0; display: grid; place-items: center; gap: 2px; padding: 6px 0 5px; color: #818891; background: transparent; border-radius: 8px; font-size: 8px; font-weight: 500; }
+.tabbar button .office-icon { width: 18px; height: 18px; }
 .tabbar button.selected { color: #3474ad; background: var(--surface-blue); }
-.tabbar button span { line-height: 1; }
+.tabbar button span { line-height: 1; white-space: nowrap; }
 
 @media (max-width: 480px) {
   .zone-callout { display: none; }

@@ -2,8 +2,9 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { fetchAgents, fetchEvolution, fetchOutbox, fetchTasks, retryOutbox, sendMessage } from './api';
 import { OfficeIcon, type OfficeIconName } from './components/OfficeIcon';
 import type { AgentInfo, EvolutionData, OutboxData, TaskItem, TaskStatus } from './types';
+import { WorkflowPage } from './WorkflowPage';
 
-type Tab = 'office' | 'workspace' | 'agent' | 'evolution' | 'activity';
+type Tab = 'office' | 'workspace' | 'agent' | 'evolution' | 'activity' | 'workflow';
 type BeforeInstallPromptEvent = Event & {
   prompt: () => Promise<void>;
   userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }>;
@@ -71,6 +72,7 @@ const tabs: Array<{ key: Tab; label: string; icon: OfficeIconName }> = [
   { key: 'office', label: '办公室', icon: 'office' },
   { key: 'workspace', label: '空间', icon: 'workspace' },
   { key: 'agent', label: '员工', icon: 'agent' },
+  { key: 'workflow', label: '工作流', icon: 'workflow' },
   { key: 'evolution', label: '进化', icon: 'growth' },
   { key: 'activity', label: '任务', icon: 'activity' },
 ];
@@ -1662,6 +1664,7 @@ export default function App() {
       {tab === 'office' && <OfficePage agents={agents} tasks={tasks} channels={channels} selectedId={selectedId} setSelectedId={setSelectedId} onSelectAgent={handleSelectAgentFromOffice} pending={outbox.count} backendOffline={offline} installPrompt={installPrompt} installed={installed} onInstall={handleInstall} />}
       {tab === 'workspace' && <WorkspacePage tasks={tasks} onDispatch={handleWorkspaceDispatch} onExpertSubmit={handleWorkspaceExpertSubmit} />}
       {tab === 'agent' && <AgentPage agents={agents} selectedId={selectedId} onSelectAgent={handleSelectAgent} agent={selectedAgent} tasks={tasks} evolution={evolution} cameFromOffice={cameFromOffice} onBack={() => { setTab('office'); setCameFromOffice(false); const url = new URL(window.location.href); url.searchParams.delete('view'); url.searchParams.delete('id'); window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`); }} />}
+      {tab === 'workflow' && <WorkflowPage />}
       {tab === 'evolution' && <EvolutionPage evolution={evolution} />}
       {tab === 'activity' && <ActivityPage tasks={tasks} outbox={outbox} onExpertPanelSubmit={handleExpertPanelSubmit} onRetryOutbox={handleRetryOutbox} retryStatus={retryStatus} retrying={retrying} autoRetryEnabled={autoRetryEnabled} autoRetryReport={autoRetryReport} onToggleAutoRetry={handleToggleAutoRetry} />}
       <nav className="tabbar" aria-label="主导航">

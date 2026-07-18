@@ -1092,52 +1092,157 @@ class Workflow(BaseModel):
     updated_at: str | None = None
 
 
-WORKFLOWS_FILE = PROJECT_ROOT / "runtime" / "workflows.jsonl"
+WORKFLOWS_FILE = PROJECT_ROOT / "runtime" / "workflows.json"
+WORKFLOWS_LEGACY_FILE = PROJECT_ROOT / "runtime" / "workflows.jsonl"
 
 
-def load_workflows() -> list[dict]:
-    try:
-        if not WORKFLOWS_FILE.exists():
-            return []
-        lines = WORKFLOWS_FILE.read_text(encoding="utf-8").strip().split("\n")
-        return [json.loads(line) for line in lines if line.strip()]
-    except Exception:
+def _normalize_workflow(item: dict[str, Any]) -> dict[str, Any] | None:
+    if not isinstance(item, dict):
+        return None
+    workflow_id = item.get("id")
+    name = item.get("name")
+    if not isinstance(workflow_id, str) or not workflow_id.strip():
+        return None
+    if not isinstance(name, str) or not name.strip():
+        return None
+    return {
+        "id": workflow_id.strip(),
+        "name": name.strip(),
+        "nodes": item.get("nodes") if isinstance(item.get("nodes"), list) else [],
+        "edges": item.get("edges") if isinstance(item.get("edges"), list) else [],
+        "created_at": item.get("created_at") if isinstance(item.get("created_at"), str) else None,
+        "updated_at": item.get("updated_at") if isinstance(item.get("updated_at"), str) else None,
+    }
+
+
+def _load_legacy_workflows() -> list[dict[str, Any]]:
+    if not WORKFLOWS_LEGACY_FILE.is_file():
         return []
-
-
-def save_workflow(workflow: dict):
     try:
-        WORKFLOWS_FILE.parent.mkdir(parents=True, exist_ok=True)
-        with open(WORKFLOWS_FILE, "a", encoding="utf-8") as f:
-            f.write(json.dumps(workflow, ensure_ascii=False) + "\n")
-    except Exception as e:
-        print("Save workflow failed:", e)
+        lines = WORKFLOWS_LEGACY_FILE.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return []
+    workflows: list[dict[str, Any]] = []
+    for line in lines:
+        text = line.strip()
+        if not text:
+            continue
+        try:
+            payload = json.loads(text)
+        except json.JSONDecodeError:
+            continue
+        normalized = _normalize_workflow(payload) if isinstance(payload, dict) else None
+        if normalized:
+            workflows.append(normalized)
+    return workflows
+
+
+def load_workflows() -> list[dict[str, Any]]:
+    """Load workflows with id-based upsert semantics. Prefer workflows.json."""
+    workflows_by_id: dict[str, dict[str, Any]] = {}
+
+    # Migrate older append-only jsonl if present.
+    for item in _load_legacy_workflows():
+        workflows_by_id[item["id"]] = item
+
+    if WORKFLOWS_FILE.is_file():
+        try:
+            payload = json.loads(WORKFLOWS_FILE.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, json.JSONDecodeError):
+            payload = None
+        if isinstance(payload, list):
+            for item in payload:
+                normalized = _normalize_workflow(item) if isinstance(item, dict) else None
+                if normalized:
+                    workflows_by_id[normalized["id"]] = normalized
+        elif isinstance(payload, dict) and isinstance(payload.get("workflows"), list):
+            for item in payload["workflows"]:
+                normalized = _normalize_workflow(item) if isinstance(item, dict) else None
+                if normalized:
+                    workflows_by_id[normalized["id"]] = normalized
+
+    workflows = list(workflows_by_id.values())
+    workflows.sort(key=lambda item: item.get("updated_at") or item.get("created_at") or "", reverse=True)
+    return workflows
+
+
+def save_workflows(workflows: list[dict[str, Any]]) -> None:
+    WORKFLOWS_FILE.parent.mkdir(parents=True, exist_ok=True)
+    payload = {"ok": True, "workflows": workflows, "updated_at": utc_now()}
+    WORKFLOWS_FILE.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+
+def upsert_workflow(workflow: dict[str, Any]) -> dict[str, Any]:
+    workflows = load_workflows()
+    workflow_id = str(workflow.get("id") or "").strip() or f"wf-{int(datetime.now().timestamp() * 1000)}"
+    now = utc_now()
+    existing = next((item for item in workflows if item.get("id") == workflow_id), None)
+    record = {
+        "id": workflow_id,
+        "name": str(workflow.get("name") or "未命名工作流").strip() or "未命名工作流",
+        "nodes": workflow.get("nodes") if isinstance(workflow.get("nodes"), list) else [],
+        "edges": workflow.get("edges") if isinstance(workflow.get("edges"), list) else [],
+        "created_at": (
+            existing.get("created_at")
+            if existing and isinstance(existing.get("created_at"), str)
+            else (workflow.get("created_at") if isinstance(workflow.get("created_at"), str) else now)
+        ),
+        "updated_at": now,
+    }
+    next_workflows = [item for item in workflows if item.get("id") != workflow_id]
+    next_workflows.insert(0, record)
+    save_workflows(next_workflows)
+    return record
 
 
 @app.get("/api/workflows")
 async def list_workflows():
     workflows = load_workflows()
-    return {"ok": True, "workflows": workflows}
+    return {"ok": True, "workflows": workflows, "count": len(workflows)}
 
 
 @app.post("/api/workflows")
 async def save_workflow_api(workflow: Workflow):
     data = workflow.model_dump()
-    data["id"] = data["id"] or f"wf-{int(datetime.now().timestamp() * 1000)}"
-    data["created_at"] = data.get("created_at") or utc_now()
-    data["updated_at"] = utc_now()
-    save_workflow(data)
-    return {"ok": True, "workflow": data, "message": "工作流已保存到服务器"}
+    try:
+        record = upsert_workflow(data)
+    except OSError as exc:
+        return JSONResponse(
+            status_code=500,
+            content={
+                "ok": False,
+                "error": f"工作流保存失败：{type(exc).__name__}",
+            },
+        )
+    return {
+        "ok": True,
+        "workflow": record,
+        "message": "工作流已按 id upsert 保存到服务器",
+        "mode": "upsert",
+    }
 
 
 @app.post("/api/workflows/execute")
 async def execute_workflow(payload: dict):
-    # Proxy to real Hermes or simulate with real call
-    workflow_name = payload.get("name", "Unnamed")
-    # In real scenario, this would call Hermes gateway with the nodes
+    """Honest simulated execution until real Hermes node runner lands."""
+    if not isinstance(payload, dict):
+        payload = {}
+    workflow_name = payload.get("name") if isinstance(payload.get("name"), str) else "Unnamed"
+    raw_nodes = payload.get("nodes")
+    raw_edges = payload.get("edges")
+    nodes: list[Any] = raw_nodes if isinstance(raw_nodes, list) else []
+    edges: list[Any] = raw_edges if isinstance(raw_edges, list) else []
     return {
         "ok": True,
-        "result": f"工作流 {workflow_name} 执行完成（已代理到本地 Hermes）",
-        "executed_nodes": len(payload.get("nodes", [])),
+        "mode": "simulated",
+        "delivered": False,
+        "queued": False,
+        "result": f"工作流「{workflow_name}」模拟运行完成，尚未调用 Hermes",
+        "message": "当前为模拟执行，不会真正调用 Hermes API Server / outbox",
+        "executed_nodes": len(nodes),
+        "edge_count": len(edges),
         "timestamp": utc_now(),
     }
