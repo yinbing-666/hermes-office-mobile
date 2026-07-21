@@ -31,3 +31,52 @@
 **原因**：轻量、AI 熟悉、适合 mobile-first；不改 Hermes 核心，降低风险。  
 **代价**：第一版不直接替代官方 Desktop，仅作为个人办公室控制台。  
 **日期**：2026-07-15
+
+## Git 工作流：Worktree 并行开发
+
+### 何时用
+
+需要 CC 和 Codex 同时开工（前后端分离改动）、或一个大功能需要拆多个方向同时开发时用 worktree。日常小改动直接改 master 即可，不需要 worktree。
+
+### 分支命名规范
+
+```
+feature/<功能名>-frontend   前端改动分支
+feature/<功能名>-backend    后端改动分支
+feature/<功能名>            前后端都在 master 上改（单人小改动）
+```
+
+### Worktree 操作流程
+
+```bash
+# 1. 从 master 创建 worktree
+git worktree add ../worktrees/feature-xxx-frontend feature/xxx-frontend
+git worktree add ../worktrees/feature-xxx-backend  feature/xxx-backend
+
+# 2. 在各自 worktree 开发
+# frontend
+cd ../worktrees/feature-xxx-frontend
+claude ...   # 改前端代码
+
+# backend（另一个终端）
+cd ../worktrees/feature-xxx-backend
+codex ...    # 改后端代码
+
+# 3. 完成后合并回 master
+git checkout master
+git merge feature/xxx-frontend --no-ff -m "feat: frontend part of xxx"
+git merge feature/xxx-backend  --no-ff -m "feat: backend part of xxx"
+
+# 4. 清理 worktree
+git worktree remove ../worktrees/feature-xxx-frontend
+git worktree remove ../worktrees/feature-xxx-backend
+git branch -d feature/xxx-frontend feature/xxx-backend
+```
+
+### 规范
+
+- 所有 worktree 基于 `master`，不从其他 worktree 再开 worktree。
+- 合并前各自 `cd ../worktrees/xxx && git pull origin master` 拉最新。
+- commit 信息格式：`feat:` / `fix:` / `refactor:` 前缀，描述具体改了什么。
+- 并行开发时，不同时改同一个文件。前端改 `frontend/src/`、`frontend/index.html`；后端改 `backend/main.py` 及 `backend/` 下其他文件。
+- Worktree 目录统一放 `../worktrees/`，不在项目根目录散落。
