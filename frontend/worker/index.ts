@@ -3,7 +3,7 @@ export interface Env {
   GITHUB_TOKEN: string;
 }
 
-const TOPICS_GITHUB_RAW = "https://raw.githubusercontent.com/yinbing-666/hermes-office-mobile/main/frontend/public/topics.json";
+const WORKER_TOPICS_URL = "https://raw.githubusercontent.com/yinbing-666/hermes-office-mobile/master/frontend/public/topics.json";
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
@@ -48,7 +48,7 @@ export default {
         };
         if (token) headers["Authorization"] = `token ${token}`;
 
-        const resp = await fetch(TOPICS_GITHUB_RAW, { headers });
+        const resp = await fetch(WORKER_TOPICS_URL, { headers });
         if (!resp.ok) throw new Error(`GitHub fetch failed: ${resp.status}`);
 
         const data = await resp.json();
