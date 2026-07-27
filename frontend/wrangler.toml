@@ -1,0 +1,7 @@
+name = "hermes-office-api"
+main = "worker/index.ts"
+compatibility_date = "2024-01-01"
+
+[[kv_namespaces]]
+binding = "TOPICS_KV"
+id = "47c230fe8e6e4428b0d437773801ec83"
