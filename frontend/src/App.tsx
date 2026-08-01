@@ -1,10 +1,13 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { fetchAgents, fetchEvolution, fetchOutbox, fetchTasks, retryOutbox, sendMessage } from './api';
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
+import { fetchAgents, fetchEvolution, fetchOutbox, fetchTasks, fetchDelegationTasks, retryOutbox, sendMessage, fetchTopics, runExpertPipeline, fetchSession, loginWithPassword, logoutSession } from './api';
+import type { PipelineStep, PipelineResult, SessionData } from './api';
 import { OfficeIcon, type OfficeIconName } from './components/OfficeIcon';
+import { LoginPage } from './LoginPage';
 import type { AgentInfo, EvolutionData, OutboxData, TaskItem, TaskStatus } from './types';
-import { WorkflowPage } from './WorkflowPage';
 
-type Tab = 'office' | 'workspace' | 'agent' | 'evolution' | 'activity' | 'workflow';
+const WorkflowPage = lazy(() => import('./WorkflowPage').then((module) => ({ default: module.WorkflowPage })));
+
+type Tab = 'office' | 'workspace' | 'agent' | 'topics' | 'workflow' | 'evolution' | 'activity';
 type BeforeInstallPromptEvent = Event & {
   prompt: () => Promise<void>;
   userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }>;
@@ -37,11 +40,28 @@ const expertPanelAgents: Array<{ id: ExpertAgentId; name: string; perspective: s
 
 const workspaceStorageKey = 'hermes-office-workspaces';
 
+function SessionLoadingPage() {
+  return (
+    <main className="login-shell">
+      <section className="login-panel" aria-busy="true" aria-labelledby="session-loading-title">
+        <div className="login-brand" aria-hidden="true">
+          <OfficeIcon name="office" size={24} />
+        </div>
+        <p className="login-kicker">HERMES OFFICE</p>
+        <h1 id="session-loading-title">正在打开办公室</h1>
+        <p className="login-copy" role="status">正在确认登录状态…</p>
+      </section>
+    </main>
+  );
+}
+
 const issueReasonMap: Record<string, string> = {
   api_request_failed: 'Hermes 通道请求失败',
   api_key_unavailable: '鉴权配置待恢复',
   api_server_offline: 'Hermes 服务未连接',
+  delivery_unconfirmed: '发送结果未确认，请勿重复提交',
   profile_not_found: '员工档案未找到',
+  stale_outbox_requires_confirmation: '存在超过 48 小时的旧消息，自动补投已阻止',
 };
 
 const roleMap: Record<string, RoleMeta> = {
@@ -72,6 +92,7 @@ const tabs: Array<{ key: Tab; label: string; icon: OfficeIconName }> = [
   { key: 'office', label: '办公室', icon: 'office' },
   { key: 'workspace', label: '空间', icon: 'workspace' },
   { key: 'agent', label: '员工', icon: 'agent' },
+  { key: 'topics', label: '选题', icon: 'activity' },
   { key: 'workflow', label: '工作流', icon: 'workflow' },
   { key: 'evolution', label: '进化', icon: 'growth' },
   { key: 'activity', label: '任务', icon: 'activity' },
@@ -154,6 +175,8 @@ function formatTaskTechnicalMeta(task: TaskItem) {
   return formatTechnicalMeta([
     task.agent_id ? `员工标识 ${task.agent_id}` : null,
     task.fallback_reason ? `原始原因 ${task.fallback_reason}` : null,
+    task.kanban_status ? `看板状态 ${task.kanban_status}` : null,
+    task.heartbeat_at ? `心跳 ${formatTime(task.heartbeat_at)}` : null,
   ]);
 }
 
@@ -426,7 +449,7 @@ function ChannelHealthCard({ channels }: { channels: ChannelHealth[] }) {
   );
 }
 
-function OfficePage({ agents, tasks, channels, selectedId, setSelectedId, onSelectAgent, pending, backendOffline, installPrompt, installed, onInstall }: { agents: AgentInfo[]; tasks: TaskItem[]; channels: ChannelHealth[]; selectedId: string; setSelectedId: (id: string) => void; onSelectAgent: (agentId: string) => void; pending: number; backendOffline: boolean; installPrompt: BeforeInstallPromptEvent | null; installed: boolean; onInstall: () => void }) {
+function OfficePage({ agents, tasks, channels, selectedId, setSelectedId, onSelectAgent, pending, backendOffline, installPrompt, installed, onInstall, loading }: { agents: AgentInfo[]; tasks: TaskItem[]; channels: ChannelHealth[]; selectedId: string; setSelectedId: (id: string) => void; onSelectAgent: (agentId: string) => void; pending: number; backendOffline: boolean; installPrompt: BeforeInstallPromptEvent | null; installed: boolean; onInstall: () => void; loading: boolean }) {
   const online = agents.filter((agent) => agent.status === 'online').length;
   const offline = Math.max(agents.length - online, 0);
   return (
@@ -458,7 +481,7 @@ function OfficePage({ agents, tasks, channels, selectedId, setSelectedId, onSele
         <span>{agents.length} 位员工</span>
       </div>
       <div className="agent-list">
-        {agents.length === 0 ? (
+        {loading ? <div className="empty-card offline-empty" role="status">正在读取员工数据…</div> : agents.length === 0 ? (
           <div className="empty-card offline-empty">
             <OfficeIcon name={backendOffline ? 'alert' : 'agent'} size={19} />
             <span>{backendOffline ? '后端离线且暂无缓存数据，其他页面仍可继续浏览。' : '暂无员工数据。'}</span>
@@ -471,7 +494,7 @@ function OfficePage({ agents, tasks, channels, selectedId, setSelectedId, onSele
   );
 }
 
-function AgentPage({ agents, selectedId, onSelectAgent, agent, tasks, evolution, cameFromOffice, onBack }: { agents: AgentInfo[]; selectedId: string; onSelectAgent: (id: string) => void; agent?: AgentInfo; tasks: TaskItem[]; evolution: EvolutionData; cameFromOffice?: boolean; onBack?: () => void }) {
+function AgentPage({ agents, selectedId, onSelectAgent, agent, tasks, evolution, cameFromOffice, onBack, loading }: { agents: AgentInfo[]; selectedId: string; onSelectAgent: (id: string) => void; agent?: AgentInfo; tasks: TaskItem[]; evolution: EvolutionData; cameFromOffice?: boolean; onBack?: () => void; loading: boolean }) {
   const [message, setMessage] = useState('');
   const [sending, setSending] = useState(false);
   const [sendStatus, setSendStatus] = useState<{ type: 'sent' | 'error'; text: string } | null>(null);
@@ -495,6 +518,7 @@ function AgentPage({ agents, selectedId, onSelectAgent, agent, tasks, evolution,
     setSendStatus(null);
   }, [agent?.id]);
 
+  if (loading) return <div className="empty-card" role="status">正在读取员工数据…</div>;
   if (!agent) return <div className="empty-card">暂无员工数据。</div>;
   const meta = roleMap[agent.id] ?? fallbackRole;
   const evolutionProfile = evolution.profiles?.find((profile) => profile.profile === agent.id);
@@ -515,9 +539,14 @@ function AgentPage({ agents, selectedId, onSelectAgent, agent, tasks, evolution,
     try {
       const result = await sendMessage(agent.id, task);
       setMessage('');
+      const statusText = result.delivered
+        ? '已发送到 Hermes'
+        : result.queued
+          ? '已确认进入兜底队列'
+          : formatIssueReason(result.fallback_reason) || '发送结果未确认，请勿重复提交';
       setSendStatus({
-        type: 'sent',
-        text: `${result.delivered ? '已发送到 Hermes' : '已入队兜底'} · ${formatTime(result.stored_at)}`,
+        type: result.delivered || result.queued ? 'sent' : 'error',
+        text: statusText + ' · ' + formatTime(result.stored_at),
       });
     } catch (error) {
       setSendStatus({ type: 'error', text: error instanceof Error ? error.message : '发送失败，请稍后重试' });
@@ -667,6 +696,54 @@ function AgentPage({ agents, selectedId, onSelectAgent, agent, tasks, evolution,
   );
 }
 
+function TopicsPage() {
+  const [topics, setTopics] = useState<Array<{title: string; platform: string; reason: string; value: string}>>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [reloadToken, setReloadToken] = useState(0);
+
+  useEffect(() => {
+    fetchTopics().then((res) => {
+      const data = res.data;
+      if (data?.ok && data?.topics?.length) {
+        setTopics(data.topics);
+      } else {
+        setError(res.offline ? '选题服务暂时不可用，请稍后重试' : data?.source === 'expired' ? '最近 48 小时没有有效选题数据' : data?.source === 'none' ? '今日尚未生成选题数据' : '暂无可展示的选题数据');
+      }
+      setLoading(false);
+    }).catch(() => { setError('加载失败'); setLoading(false); });
+  }, [reloadToken]);
+
+  if (loading) return <section className="page-section"><p className="section-kicker">选题</p><p style={{padding: '16px', color: '#888'}}>加载中…</p></section>;
+  if (error) return (
+    <section className="page-section">
+      <p className="section-kicker">选题</p>
+      <div className="empty-card topics-empty" role="status">
+        <OfficeIcon name="file" size={19} />
+        <p>{error}</p>
+        <button className="mini-button" type="button" onClick={() => { setError(''); setLoading(true); setReloadToken((current) => current + 1); }}>重新读取</button>
+      </div>
+    </section>
+  );
+
+  return (
+    <section className="page-section topics-page">
+      <p className="section-kicker">Content选题</p>
+      <h2>今日备选</h2>
+      {topics.map((t, i) => (
+        <div key={i} className="topics-card">
+          <div className="topics-header">
+            <span className="topics-title">{t.title}</span>
+            <span className={`topics-platform ${t.platform === '小红书' ? 'red' : 'blue'}`}>{t.platform}</span>
+          </div>
+          <p className="topics-reason">推荐理由：{t.reason}</p>
+          <p className="topics-value">价值：{t.value}</p>
+        </div>
+      ))}
+    </section>
+  );
+}
+
 function EvolutionPage({ evolution }: { evolution: EvolutionData }) {
   const [expandedSkillGroups, setExpandedSkillGroups] = useState<Record<string, boolean>>({});
   const recentSkills = evolution.skills?.recent ?? [];
@@ -694,10 +771,16 @@ function EvolutionPage({ evolution }: { evolution: EvolutionData }) {
     { title: '专家协作', icon: 'agent', keywords: ['agent', 'team', 'expert', 'delegate', 'invest', 'collaborat'] },
     { title: '自动化任务', icon: 'activity', keywords: ['task', 'workflow', 'cron', 'automation', 'schedule'] },
   ];
-  const capabilityMatrix = capabilityGroups.map((group) => {
-    const matched = recentSkills.filter((skill) => group.keywords.some((keyword) => skill.name.toLowerCase().includes(keyword)));
-    return { ...group, matched };
-  });
+  const capabilityMatrix = (evolution.capabilities && evolution.capabilities.length > 0)
+    ? evolution.capabilities.map((cap) => ({
+        title: cap.name,
+        icon: capabilityGroups.find((g) => g.title === cap.name)?.icon ?? 'terminal' as OfficeIconName,
+        matched: cap.matched,
+      }))
+    : capabilityGroups.map((group) => {
+        const matched = recentSkills.filter((skill) => group.keywords.some((keyword) => skill.name.toLowerCase().includes(keyword)));
+        return { ...group, matched };
+      });
   const skillTreeIcons: Record<string, OfficeIconName> = {
     messaging: 'message',
     knowledge: 'search',
@@ -821,11 +904,12 @@ function EvolutionPage({ evolution }: { evolution: EvolutionData }) {
   );
 }
 
-type TaskFilter = 'all' | 'running' | 'completed' | 'queued' | 'interrupted' | 'event';
+type TaskFilter = 'all' | 'running' | 'blocked' | 'completed' | 'queued' | 'interrupted' | 'event';
 
 const taskFilters: Array<{ key: TaskFilter; label: string }> = [
   { key: 'all', label: '全部' },
   { key: 'running', label: '进行中' },
+  { key: 'blocked', label: '阻塞' },
   { key: 'completed', label: '已完成' },
   { key: 'queued', label: '待补投' },
   { key: 'interrupted', label: '中断/失败' },
@@ -834,6 +918,7 @@ const taskFilters: Array<{ key: TaskFilter; label: string }> = [
 
 const taskStatusMeta: Record<TaskStatus, { label: string; icon: OfficeIconName }> = {
   running: { label: '进行中', icon: 'clock' },
+  blocked: { label: '阻塞', icon: 'alert' },
   completed: { label: '已完成', icon: 'check' },
   queued: { label: '待补投', icon: 'database' },
   failed: { label: '失败', icon: 'alert' },
@@ -841,7 +926,7 @@ const taskStatusMeta: Record<TaskStatus, { label: string; icon: OfficeIconName }
   event: { label: '事件', icon: 'activity' },
 };
 
-const taskSourceLabels: Record<string, string> = { cron: '定时任务', outbox: '兜底队列', sent: '已送达', gateway: '网关事件' };
+const taskSourceLabels: Record<string, string> = { cron: '定时任务', outbox: '兜底队列', sent: '已送达', gateway: '网关事件', kanban: '智能看板' };
 
 function WorkspacePage({ tasks, onDispatch, onExpertSubmit }: { tasks: TaskItem[]; onDispatch: (agentId: ExpertAgentId, workspaceName: string, goal: string, task: string) => Promise<ExpertDeliveryResult>; onExpertSubmit: (memberIds: ExpertAgentId[], workspaceName: string, goal: string, question: string, batchId: string) => Promise<ExpertDeliveryResult[]> }) {
   const [workspaces, setWorkspaces] = useState<Workspace[]>(loadWorkspaces);
@@ -860,6 +945,11 @@ function WorkspacePage({ tasks, onDispatch, onExpertSubmit }: { tasks: TaskItem[
   const [workspaceActivity, setWorkspaceActivity] = useState<WorkspaceActivityData>({ sent: [], outbox: [], tasks: [] });
   const [activityLoading, setActivityLoading] = useState(false);
   const [activityRefresh, setActivityRefresh] = useState(0);
+  // 深度分析流水线状态
+  const [pipelineMode, setPipelineMode] = useState<'parallel' | 'serial'>('parallel');
+  const [pipelineSteps, setPipelineSteps] = useState<PipelineStep[]>([]);
+  const [pipelineResult, setPipelineResult] = useState<PipelineResult | null>(null);
+  const [pipelineSubmitting, setPipelineSubmitting] = useState(false);
   const selectedWorkspace = workspaces.find((workspace) => workspace.id === selectedWorkspaceId) ?? workspaces[0];
   const workspaceTasks = useMemo(() => {
     if (!selectedWorkspace) return [];
@@ -900,6 +990,8 @@ function WorkspacePage({ tasks, onDispatch, onExpertSubmit }: { tasks: TaskItem[
     setDeliveryResults([]);
     setDispatchTask('');
     setDispatchResult(null);
+    setPipelineSteps([]);
+    setPipelineResult(null);
   }, [selectedWorkspaceId]);
 
   useEffect(() => {
@@ -981,6 +1073,49 @@ function WorkspacePage({ tasks, onDispatch, onExpertSubmit }: { tasks: TaskItem[
     if (!selectedWorkspace || !trimmedQuestion || submitting) return;
     setSubmitting(true);
     setDeliveryResults([]);
+    setPipelineSteps([]);
+    setPipelineResult(null);
+
+    // ── 串行模式 ──────────────────────────────────────────────
+    if (pipelineMode === 'serial') {
+      setPipelineSubmitting(true);
+      try {
+        const result = await runExpertPipeline(
+          selectedWorkspace.name,
+          selectedWorkspace.goal,
+          trimmedQuestion,
+          selectedWorkspace.memberIds,
+          'serial'
+        );
+        // 实时更新步骤状态（后端同步返回已完成的结果）
+        setPipelineSteps(result.steps);
+        setPipelineResult(result);
+
+        // 记录日志
+        const createdAt = new Date().toISOString();
+        appendLogs(selectedWorkspace.id, result.steps
+          .filter((s) => s.status === 'done' || s.status === 'error' || s.status === 'offline')
+          .map((step, index) => ({
+            id: `workspace-log-${Date.now()}-${index}-${Math.random().toString(36).slice(2, 8)}`,
+            createdAt,
+            type: 'expert' as const,
+            targetAgentId: step.agent_id as ExpertAgentId,
+            status: step.status === 'done' ? 'delivered' as const : step.status === 'error' ? 'failed' as const : 'queued' as const,
+            title: trimmedQuestion,
+            batchId: result.batch_id,
+            responsePreview: step.response_preview,
+          }))
+        );
+        setActivityRefresh((current) => current + 1);
+        setQuestion('');
+      } finally {
+        setPipelineSubmitting(false);
+      }
+      setSubmitting(false);
+      return;
+    }
+
+    // ── 并行模式（原有逻辑）──────────────────────────────────
     try {
       const batchId = `expert-batch-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
       const results = await onExpertSubmit(selectedWorkspace.memberIds, selectedWorkspace.name, selectedWorkspace.goal, trimmedQuestion, batchId);
@@ -1143,9 +1278,67 @@ function WorkspacePage({ tasks, onDispatch, onExpertSubmit }: { tasks: TaskItem[
 
           <div className="workspace-expert-card">
             <div className="workspace-section-heading"><div><span>Expert Team</span><h3>空间内专家团</h3></div><small>仅投递给当前空间成员</small></div>
+
+            {/* 模式切换 */}
+            <div className="workspace-mode-toggle">
+              <button
+                type="button"
+                className={pipelineMode === 'parallel' ? 'active' : ''}
+                onClick={() => setPipelineMode('parallel')}
+              >⚡ 快速评审</button>
+              <button
+                type="button"
+                className={pipelineMode === 'serial' ? 'active' : ''}
+                onClick={() => setPipelineMode('serial')}
+              >🔬 深度分析</button>
+            </div>
+
             <textarea value={question} onChange={(event) => setQuestion(event.target.value)} placeholder={`向“${selectedWorkspace.name}”成员提问`} aria-label="空间内专家团问题" />
-            <button className="workspace-primary-button" type="button" onClick={() => void handleSubmit()} disabled={submitting || !question.trim()}><OfficeIcon name="send" size={16} />{submitting ? '正在投递…' : `投递给 ${selectedWorkspace.memberIds.length} 位成员`}</button>
-            {deliveryResults.length > 0 ? (
+
+            {/* 串行模式进度条 */}
+            {pipelineMode === 'serial' && pipelineSteps.length > 0 && (
+              <div className="pipeline-progress">
+                {pipelineSteps.map((step, i) => (
+                  <div key={i} className={`pipeline-step ${step.status}`}>
+                    <span className="step-icon">
+                      {step.status === 'done' ? '✅' : step.status === 'running' ? '⏳' : step.status === 'error' ? '❌' : step.status === 'offline' ? '🚫' : step.status === 'skipped' ? '⏭️' : '⭕'}
+                    </span>
+                    <span className="step-agent">
+                      {step.agent_id === 'default' ? '小黑' : step.agent_id === 'media-ops' ? '小橙' : '小金'}
+                    </span>
+                    {step.response_preview && <p className="step-preview">{step.response_preview}</p>}
+                    {step.error && <p className="step-error">⚠️ {step.error}</p>}
+                    {step.reason && <p className="step-reason">{step.reason}</p>}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* 串行模式最终报告 */}
+            {pipelineMode === 'serial' && pipelineResult && pipelineResult.final_report && (
+              <div className="pipeline-final-report">
+                <div className="pipeline-report-heading">
+                  <OfficeIcon name="workspace" size={16} />
+                  <span>深度分析报告</span>
+                </div>
+                <div className="pipeline-report-content">{pipelineResult.final_report}</div>
+              </div>
+            )}
+
+            <button
+              className="workspace-primary-button"
+              type="button"
+              onClick={() => void handleSubmit()}
+              disabled={submitting || !question.trim() || (pipelineMode === 'serial' && pipelineSubmitting)}
+            >
+              <OfficeIcon name="send" size={16} />
+              {pipelineMode === 'serial'
+                ? (pipelineSubmitting ? '深度分析中…' : '🔬 启动深度分析')
+                : (submitting ? '正在投递…' : `投递给 ${selectedWorkspace.memberIds.length} 位成员`)}
+            </button>
+
+            {/* 并行模式投递结果 */}
+            {pipelineMode === 'parallel' && deliveryResults.length > 0 ? (
               <div className="expert-delivery-results" aria-live="polite">
                 {deliveryResults.map((result) => (
                   <div key={result.agentId} className={result.status}>
@@ -1203,13 +1396,16 @@ function WorkspacePage({ tasks, onDispatch, onExpertSubmit }: { tasks: TaskItem[
   );
 }
 
-function ActivityPage({ tasks, outbox, onExpertPanelSubmit, onRetryOutbox, retryStatus, retrying, autoRetryEnabled, autoRetryReport, onToggleAutoRetry }: { tasks: TaskItem[]; outbox: OutboxData; onExpertPanelSubmit: (question: string) => Promise<ExpertDeliveryResult[]>; onRetryOutbox: () => void; retryStatus: string; retrying: boolean; autoRetryEnabled: boolean; autoRetryReport: AutoRetryReport; onToggleAutoRetry: () => void }) {
+function ActivityPage({ tasks, outbox, onExpertPanelSubmit, onRetryOutbox, retryStatus, retrying, autoRetryEnabled, autoRetryReport, onToggleAutoRetry, onSelectAgent }: { tasks: TaskItem[]; outbox: OutboxData; onExpertPanelSubmit: (question: string) => Promise<ExpertDeliveryResult[]>; onRetryOutbox: () => void; retryStatus: string; retrying: boolean; autoRetryEnabled: boolean; autoRetryReport: AutoRetryReport; onToggleAutoRetry: () => void; onSelectAgent: (agentId: string) => void }) {
   const [filter, setFilter] = useState<TaskFilter>('all');
   const [selectedTask, setSelectedTask] = useState<TaskItem | null>(null);
   const [expertQuestion, setExpertQuestion] = useState('');
   const [expertSubmitting, setExpertSubmitting] = useState(false);
   const [expertResults, setExpertResults] = useState<ExpertDeliveryResult[]>([]);
+  const [delegationData, setDelegationData] = useState<{ delegation_id: string; available: boolean; tasks: Array<{ index: number; goal: string; status: string; log_summary: string }> } | null>(null);
+  const [delegationLoading, setDelegationLoading] = useState(false);
   const runningCount = tasks.filter((task) => task.status === 'running').length;
+  const blockedCount = tasks.filter((task) => task.status === 'blocked').length;
   const completedCount = tasks.filter((task) => task.status === 'completed').length;
   const queuedCount = tasks.filter((task) => task.status === 'queued').length;
   const filteredTasks = tasks.filter((task) => {
@@ -1221,6 +1417,31 @@ function ActivityPage({ tasks, outbox, onExpertPanelSubmit, onRetryOutbox, retry
   const selectedTaskCanRetry = selectedTask
     ? selectedTask.source === 'outbox' || selectedTask.status === 'queued' || selectedTask.status === 'failed' || selectedTask.status === 'paused'
     : false;
+  const blockedTasks = tasks.filter((task) => task.status === 'blocked');
+  const primaryBlockedTask = blockedTasks[0];
+
+  // Fetch delegation tasks when selected task has a delegation_id
+  useEffect(() => {
+    const task = selectedTask;
+    const did = task?.delegation_id;
+    if (!did) {
+      setDelegationData(null);
+      return;
+    }
+    let active = true;
+    setDelegationLoading(true);
+    setDelegationData(null);
+    fetchDelegationTasks(did)
+      .then((res) => { if (active) setDelegationData(res.data); })
+      .catch(() => { if (active) setDelegationData(null); })
+      .finally(() => { if (active) setDelegationLoading(false); });
+    return () => { active = false; };
+  }, [selectedTask?.delegation_id]);
+
+  function handleTaskAgentJump(task: TaskItem) {
+    if (!task.agent_id) return;
+    onSelectAgent(task.agent_id);
+  }
 
   async function handleExpertSubmit() {
     const question = expertQuestion.trim();
@@ -1242,9 +1463,27 @@ function ActivityPage({ tasks, outbox, onExpertPanelSubmit, onRetryOutbox, retry
       </div>
       <div className="task-stats">
         <div><span className="task-stat-icon running"><OfficeIcon name="clock" size={16} /></span><strong>{runningCount}</strong><small>进行中</small></div>
+        <div><span className="task-stat-icon blocked"><OfficeIcon name="alert" size={16} /></span><strong>{blockedCount}</strong><small>阻塞</small></div>
         <div><span className="task-stat-icon completed"><OfficeIcon name="check" size={16} /></span><strong>{completedCount}</strong><small>已完成</small></div>
         <div><span className="task-stat-icon pending"><OfficeIcon name="database" size={16} /></span><strong>{queuedCount}</strong><small>待补投</small></div>
       </div>
+      {primaryBlockedTask ? (
+        <div className="blocked-alert-card" role="status">
+          <div className="blocked-alert-icon"><OfficeIcon name="alert" size={18} /></div>
+          <div>
+            <strong>{blockedTasks.length > 1 ? `${blockedTasks.length} 个阻塞等待处理` : '有 1 个阻塞等待处理'}</strong>
+            <p>{primaryBlockedTask.title}</p>
+            <small>{formatTaskDetail(primaryBlockedTask, '等待补充阻塞原因')}</small>
+          </div>
+          <button type="button" onClick={() => {
+            setFilter('blocked');
+            setSelectedTask(primaryBlockedTask);
+          }}>查看</button>
+          {primaryBlockedTask.agent_id ? (
+            <button type="button" onClick={() => handleTaskAgentJump(primaryBlockedTask)}>找{formatAgentName(primaryBlockedTask.agent_id)}</button>
+          ) : null}
+        </div>
+      ) : null}
 
       <div className="expert-panel">
         <div className="expert-panel-heading">
@@ -1285,7 +1524,7 @@ function ActivityPage({ tasks, outbox, onExpertPanelSubmit, onRetryOutbox, retry
       <div className="outbox-card">
         <div className="outbox-main">
           <div className="outbox-icon"><OfficeIcon name="database" size={20} /></div>
-          <div><p>兜底队列</p><strong>{outbox.count} 条任务待补投</strong><small>{retryStatus || 'Hermes 通道恢复后可逐条重试'}</small></div>
+          <div><p>兜底队列</p><strong>{outbox.count} 条任务待补投</strong><small>{retryStatus || (outbox.stale_count ? outbox.stale_count + ' 条消息超过 ' + (outbox.stale_after_hours ?? 48) + ' 小时，默认不会自动重试' : 'Hermes 通道恢复后可逐条重试')}</small></div>
           <button className="mini-button" onClick={onRetryOutbox} disabled={retrying || outbox.count === 0}>
             <OfficeIcon name="refresh" size={15} />
             {retrying ? '重试中…' : '逐条重试'}
@@ -1316,7 +1555,7 @@ function ActivityPage({ tasks, outbox, onExpertPanelSubmit, onRetryOutbox, retry
             <div><span>状态</span><strong>{autoRetryEnabled ? '运行中' : autoRetryReport.completed ? '已完成' : '关闭'}</strong></div>
             <div><span>最近一次尝试</span><strong>{formatAttemptTime(autoRetryReport.lastAttemptAt)}</strong></div>
           </div>
-          {autoRetryReport.delivered !== null && autoRetryReport.remaining !== null ? (
+          {autoRetryReport.delivered !== null && autoRetryReport.remaining !== null && !autoRetryReport.error ? (
             <div className="outbox-auto-result success"><OfficeIcon name="check" size={14} /><span>最近一次成功 {autoRetryReport.delivered} 条，剩余 {autoRetryReport.remaining} 条</span></div>
           ) : null}
           {autoRetryReport.error ? (
@@ -1370,6 +1609,33 @@ function ActivityPage({ tasks, outbox, onExpertPanelSubmit, onRetryOutbox, retry
             <span>技术信息</span>
             <p>{formatTaskTechnicalMeta(selectedTask) || '暂无技术信息'}</p>
           </div>
+          {selectedTask.source === 'kanban' ? (
+            <div className="task-detail-section">
+              <span>智能看板</span>
+              <p>
+                {[
+                  selectedTask.kanban_id ? `看板ID ${selectedTask.kanban_id}` : null,
+                  selectedTask.kanban_status ? `原始状态 ${selectedTask.kanban_status}` : null,
+                  selectedTask.status === 'blocked' && selectedTask.fallback_reason
+                    ? `阻塞原因 ${formatIssueReason(selectedTask.fallback_reason)}`
+                    : null,
+                  selectedTask.latest_comment ? `最近评论 ${selectedTask.latest_comment}` : null,
+                  selectedTask.heartbeat_at ? `心跳 ${formatTime(selectedTask.heartbeat_at)}` : null,
+                  selectedTask.session_id ? `会话 ${selectedTask.session_id}` : null,
+                  selectedTask.block_kind ? `阻塞类型 ${selectedTask.block_kind}` : null,
+                  selectedTask.priority != null && selectedTask.priority !== ''
+                    ? `优先级 ${selectedTask.priority}`
+                    : null,
+                ].filter(Boolean).join(' · ') || '暂无看板附加信息'}
+              </p>
+              {selectedTask.agent_id ? (
+                <button className="task-agent-jump" type="button" onClick={() => handleTaskAgentJump(selectedTask)}>
+                  <OfficeIcon name="agent" size={15} />
+                  去找{formatAgentName(selectedTask.agent_id)}处理
+                </button>
+              ) : null}
+            </div>
+          ) : null}
           <div className="task-detail-id"><span>任务 ID</span><code>{selectedTask.id}</code></div>
           {selectedTaskCanRetry ? (
             <div className="task-detail-retry">
@@ -1378,6 +1644,44 @@ function ActivityPage({ tasks, outbox, onExpertPanelSubmit, onRetryOutbox, retry
                 <OfficeIcon name="refresh" size={15} />
                 {retrying ? '重试中…' : '逐条重试'}
               </button>
+            </div>
+          ) : null}
+          {delegationData && delegationData.tasks.length > 0 ? (
+            <div className="delegation-section">
+              <div className="delegation-section-heading">
+                <OfficeIcon name="agent" size={15} />
+                <span>子任务进度</span>
+                <span className="delegation-id">{delegationData.delegation_id}</span>
+              </div>
+              {delegationData.tasks.map((task) => (
+                <div className="delegation-task-item" key={task.index}>
+                  <div className="delegation-task-row">
+                    <span className={`delegation-dot ${task.status}`} />
+                    <strong>{task.status === 'running' ? '进行中' : task.status === 'completed' ? '已完成' : task.status}</strong>
+                    {task.goal && <span className="delegation-goal" title={task.goal}>{task.goal.length > 60 ? task.goal.slice(0, 60) + '…' : task.goal}</span>}
+                  </div>
+                  {task.log_summary ? (
+                    <p className="delegation-log">{task.log_summary}</p>
+                  ) : null}
+                  {task.status === 'running' && selectedTask?.agent_id ? (
+                    <a
+                      href={`/?view=agent&id=${selectedTask.agent_id}`}
+                      className="delegation-jump-link"
+                      onClick={(e) => { e.preventDefault(); onSelectAgent(selectedTask.agent_id!); }}
+                    >
+                      <OfficeIcon name="agent" size={13} />
+                      跳转查看详情
+                    </a>
+                  ) : null}
+                </div>
+              ))}
+            </div>
+          ) : delegationLoading && selectedTask?.delegation_id ? (
+            <div className="delegation-section loading">
+              <div className="delegation-loading-row">
+                <OfficeIcon name="clock" size={14} />
+                <span>正在加载子任务状态…</span>
+              </div>
             </div>
           ) : null}
         </aside>
@@ -1427,12 +1731,33 @@ export default function App() {
   const [autoRetryEnabled, setAutoRetryEnabled] = useState(false);
   const [autoRetryReport, setAutoRetryReport] = useState<AutoRetryReport>({ completed: false, lastAttemptAt: null, delivered: null, remaining: null, error: '' });
   const [offline, setOffline] = useState(false);
+  const [session, setSession] = useState<SessionData | null>(null);
+  const [sessionLoading, setSessionLoading] = useState(true);
+  const [loginLoading, setLoginLoading] = useState(false);
+  const [loginError, setLoginError] = useState('');
+  const [authError, setAuthError] = useState('');
+  const [loading, setLoading] = useState(true);
   const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null);
   const [installed, setInstalled] = useState(() => window.matchMedia('(display-mode: standalone)').matches || Boolean((navigator as Navigator & { standalone?: boolean }).standalone));
   const [cameFromOffice, setCameFromOffice] = useState(false);
   const retryingRef = useRef(false);
 
   useEffect(() => {
+    fetchSession()
+      .then((value) => {
+        setSession(value);
+        setAuthError('');
+      })
+      .catch((error) => setAuthError(error instanceof Error ? error.message : '登录状态读取失败'))
+      .finally(() => setSessionLoading(false));
+  }, []);
+
+  useEffect(() => {
+    if (!session?.authenticated) {
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
     Promise.all([fetchAgents(), fetchEvolution(), fetchTasks(), fetchOutbox()]).then(([agentRes, evolutionRes, taskRes, outboxRes]) => {
       setAgents(agentRes.data.agents);
       setSelectedId((current) => (
@@ -1444,8 +1769,11 @@ export default function App() {
       setTasks(taskRes.data.items ?? []);
       setOutbox(outboxRes.data);
       setOffline(agentRes.offline || evolutionRes.offline || taskRes.offline || outboxRes.offline);
-    });
-  }, []);
+    }).catch((error) => {
+      setOffline(true);
+      if (error instanceof Error && /登录|权限/.test(error.message)) setAuthError(error.message);
+    }).finally(() => setLoading(false));
+  }, [session?.authenticated]);
 
   // URL sync for agent view on load
   useEffect(() => {
@@ -1463,8 +1791,12 @@ export default function App() {
   }, [agents]);
 
   useEffect(() => {
+    if (!session?.authenticated) {
+      setChannels([]);
+      return;
+    }
     fetchChannelHealth().then(setChannels).catch(() => setChannels([]));
-  }, []);
+  }, [session?.authenticated]);
 
   useEffect(() => {
     const handleInstallPrompt = (event: Event) => {
@@ -1544,7 +1876,7 @@ export default function App() {
     return result;
   }
 
-  async function performOutboxRetry(mode: 'manual' | 'auto') {
+  async function performOutboxRetry(mode: 'manual' | 'auto', allowStale = false) {
     if (retryingRef.current || outbox.count === 0) return;
     retryingRef.current = true;
     setRetrying(true);
@@ -1552,12 +1884,13 @@ export default function App() {
     const attemptedAt = new Date().toISOString();
     if (mode === 'auto') setAutoRetryReport((current) => ({ ...current, completed: false, lastAttemptAt: attemptedAt, error: '' }));
     try {
-      const result = await retryOutbox(1);
+      const result = await retryOutbox(1, allowStale);
       const failure = result.failures?.[0]?.fallback_reason;
+      const skippedStale = result.skipped_stale ?? 0;
       if (mode === 'manual') {
-        const summary = `已尝试 ${result.attempted} 条，成功 ${result.delivered} 条，剩余 ${result.remaining} 条`;
-        const failureCopy = failure ? ` · ${formatIssueReason(failure)} · ${formatTechnicalMeta([`原始原因 ${failure}`])}` : '';
-        setRetryStatus(`${summary}${failureCopy}`);
+        const summary = '已尝试 ' + result.attempted + ' 条，成功 ' + result.delivered + ' 条，剩余 ' + result.remaining + ' 条';
+        const failureCopy = failure ? ' · ' + formatIssueReason(failure) + ' · ' + formatTechnicalMeta(['原始原因 ' + failure]) : '';
+        const staleCopy = skippedStale ? ' · 已跳过 ' + skippedStale + ' 条超过 48 小时的旧消息' : '';
       }
       if (mode === 'auto') {
         setAutoRetryReport({
@@ -1565,9 +1898,9 @@ export default function App() {
           lastAttemptAt: attemptedAt,
           delivered: result.delivered,
           remaining: result.remaining,
-          error: failure ?? '',
+          error: skippedStale ? 'stale_outbox_requires_confirmation' : failure ?? '',
         });
-        if (result.remaining === 0) setAutoRetryEnabled(false);
+        if (result.remaining === 0 || skippedStale > 0) setAutoRetryEnabled(false);
       }
       const [refreshedOutbox, refreshedTasks] = await Promise.all([fetchOutbox(), fetchTasks()]);
       setOutbox(refreshedOutbox.data);
@@ -1583,7 +1916,12 @@ export default function App() {
   }
 
   function handleRetryOutbox() {
-    void performOutboxRetry('manual');
+    const staleCount = outbox.stale_count ?? outbox.items.filter((item) => item.stored_at && Date.now() - new Date(item.stored_at).getTime() > 48 * 60 * 60 * 1000).length;
+    if (staleCount > 0 && !window.confirm('队列中有 ' + staleCount + ' 条超过 48 小时的旧消息，可能包含历史测试内容。确认逐条重试吗？')) {
+      setRetryStatus('已取消旧任务重试');
+      return;
+    }
+    void performOutboxRetry('manual', staleCount > 0);
   }
 
   function handleToggleAutoRetry() {
@@ -1596,7 +1934,11 @@ export default function App() {
       setAutoRetryReport((current) => ({ ...current, completed: true, remaining: 0, error: '' }));
       return;
     }
-    setAutoRetryEnabled(true);
+    const staleCount = outbox.stale_count ?? outbox.items.filter((item) => item.stored_at && Date.now() - new Date(item.stored_at).getTime() > 48 * 60 * 60 * 1000).length;
+    if (staleCount > 0) {
+      setAutoRetryReport((current) => ({ ...current, completed: false, error: 'stale_outbox_requires_confirmation' }));
+      return;
+    }
     setAutoRetryReport((current) => ({ ...current, completed: false, error: '' }));
   }
 
@@ -1620,6 +1962,34 @@ export default function App() {
     const choice = await installPrompt.userChoice;
     if (choice.outcome === 'accepted') setInstalled(true);
     setInstallPrompt(null);
+  }
+
+  async function handleLogin(password: string) {
+    setLoginLoading(true);
+    setLoginError('');
+    try {
+      const nextSession = await loginWithPassword(password);
+      setSession(nextSession);
+      setAuthError('');
+    } catch (error) {
+      setLoginError(error instanceof Error ? error.message : '登录失败，请稍后重试。');
+    } finally {
+      setLoginLoading(false);
+    }
+  }
+
+  async function handleLogout() {
+    try {
+      const nextSession = await logoutSession();
+      setSession(nextSession);
+      setAgents([]);
+      setTasks([]);
+      setOutbox({ count: 0, items: [] });
+      setChannels([]);
+      setOffline(false);
+    } catch (error) {
+      setAuthError(error instanceof Error ? error.message : '退出失败，请稍后重试。');
+    }
   }
 
   function handleTabChange(nextTab: Tab) {
@@ -1651,6 +2021,26 @@ export default function App() {
 
   const pageTitle = tabs.find((item) => item.key === tab)?.label ?? '办公室';
 
+  if (sessionLoading) {
+    return <SessionLoadingPage />;
+  }
+
+  if (!session || (session.auth_enabled && !session.authenticated)) {
+    return (
+      <LoginPage
+        loading={loginLoading}
+        error={loginError || authError}
+        onLogin={handleLogin}
+      />
+    );
+  }
+
+  const authLabel = authError
+    ? '登录异常'
+    : session?.auth_enabled
+      ? `已登录 · ${session.role === 'admin' ? '管理员' : session.role === 'operator' ? '操作员' : '只读'}`
+      : '鉴权待启用';
+
   return (
     <main className="app-shell">
       <header className="topbar">
@@ -1658,15 +2048,39 @@ export default function App() {
           <span>HERMES OFFICE</span>
           <strong>{pageTitle}</strong>
         </div>
-        <div className={`connection-state ${offline ? 'offline' : ''}`}><span />{offline ? '离线数据' : '已连接'}</div>
+        <div className="topbar-status">
+          <div className="auth-row">
+            <div className={`auth-state ${authError ? 'error' : session?.auth_enabled ? 'enabled' : 'pending'}`} title={session?.email ?? authError}><span />{authLabel}</div>
+            {session.auth_enabled ? <button className="logout-button" type="button" onClick={() => void handleLogout()}>退出</button> : null}
+          </div>
+          <div className={`connection-state ${offline ? 'offline' : ''}`}><span />{offline ? '离线数据' : '已连接'}</div>
+        </div>
       </header>
-      <OfflineBanner show={offline} />
-      {tab === 'office' && <OfficePage agents={agents} tasks={tasks} channels={channels} selectedId={selectedId} setSelectedId={setSelectedId} onSelectAgent={handleSelectAgentFromOffice} pending={outbox.count} backendOffline={offline} installPrompt={installPrompt} installed={installed} onInstall={handleInstall} />}
+      {authError ? <div className="auth-banner" role="alert"><OfficeIcon name="alert" size={17} /><span><strong>登录状态异常。</strong> {authError}</span></div> : null}
+      <OfflineBanner show={offline && !authError} />
+      {tab === 'office' && <OfficePage agents={agents} tasks={tasks} channels={channels} selectedId={selectedId} setSelectedId={setSelectedId} onSelectAgent={handleSelectAgentFromOffice} pending={outbox.count} backendOffline={offline} installPrompt={installPrompt} installed={installed} onInstall={handleInstall} loading={loading} />}
       {tab === 'workspace' && <WorkspacePage tasks={tasks} onDispatch={handleWorkspaceDispatch} onExpertSubmit={handleWorkspaceExpertSubmit} />}
-      {tab === 'agent' && <AgentPage agents={agents} selectedId={selectedId} onSelectAgent={handleSelectAgent} agent={selectedAgent} tasks={tasks} evolution={evolution} cameFromOffice={cameFromOffice} onBack={() => { setTab('office'); setCameFromOffice(false); const url = new URL(window.location.href); url.searchParams.delete('view'); url.searchParams.delete('id'); window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`); }} />}
-      {tab === 'workflow' && <WorkflowPage />}
+      {tab === 'agent' && <AgentPage agents={agents} selectedId={selectedId} onSelectAgent={handleSelectAgent} agent={selectedAgent} tasks={tasks} evolution={evolution} cameFromOffice={cameFromOffice} onBack={() => { setTab('office'); setCameFromOffice(false); const url = new URL(window.location.href); url.searchParams.delete('view'); url.searchParams.delete('id'); window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`); }} loading={loading} />}
+      {tab === 'topics' && (
+        <TopicsPage />
+      )}
+      {tab === 'workflow' && (
+        <Suspense fallback={(
+          <section className="page-section workflow-page">
+            <div className="workflow-loading-card">
+              <OfficeIcon name="workflow" size={22} />
+              <div>
+                <strong>正在加载工作流画布</strong>
+                <small>工作流编辑器已拆分为独立模块，按需加载以减轻首屏压力。</small>
+              </div>
+            </div>
+          </section>
+        )}>
+          <WorkflowPage />
+        </Suspense>
+      )}
       {tab === 'evolution' && <EvolutionPage evolution={evolution} />}
-      {tab === 'activity' && <ActivityPage tasks={tasks} outbox={outbox} onExpertPanelSubmit={handleExpertPanelSubmit} onRetryOutbox={handleRetryOutbox} retryStatus={retryStatus} retrying={retrying} autoRetryEnabled={autoRetryEnabled} autoRetryReport={autoRetryReport} onToggleAutoRetry={handleToggleAutoRetry} />}
+      {tab === 'activity' && <ActivityPage tasks={tasks} outbox={outbox} onExpertPanelSubmit={handleExpertPanelSubmit} onRetryOutbox={handleRetryOutbox} retryStatus={retryStatus} retrying={retrying} autoRetryEnabled={autoRetryEnabled} autoRetryReport={autoRetryReport} onToggleAutoRetry={handleToggleAutoRetry} onSelectAgent={handleSelectAgent} />}
       <nav className="tabbar" aria-label="主导航">
         {tabs.map(({ key, label, icon }) => (
           <button key={key} className={tab === key ? 'selected' : ''} onClick={() => handleTabChange(key)}>
