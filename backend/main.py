@@ -1,27 +1,31 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 import re
 import socket
 import subprocess
 import urllib.error
 import urllib.request
+import uuid
 from collections import Counter
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Iterable
 
 import yaml
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
+from local_security import SecurityManager, SecuritySettings
 
 HERMES_HOME = Path("/home/agentuser/.hermes")
 PROFILES_HOME = HERMES_HOME / "profiles"
 GATEWAY_LOG = HERMES_HOME / "logs" / "gateway.log"
 CRON_JOBS = HERMES_HOME / "cron" / "jobs.json"
+KANBAN_DB = HERMES_HOME / "kanban.db"
 SKILLS_HOME = HERMES_HOME / "skills"
 PROJECT_ROOT = Path(__file__).resolve().parent
 REPOSITORY_ROOT = PROJECT_ROOT.parent
@@ -29,6 +33,15 @@ OUTBOX_FILE = PROJECT_ROOT / "runtime" / "outbox.jsonl"
 SENT_FILE = PROJECT_ROOT / "runtime" / "sent.jsonl"
 BFF_PORT = 8787
 MESSAGE_TIMEOUT_SECONDS = 45
+OUTBOX_STALE_AFTER_HOURS = 48
+DOJO_METRICS = HERMES_HOME / "skills/dojo/data/metrics.json"
+
+CAPABILITY_GROUPS = (
+    {"name": "工具调用", "keywords": ["api", "cli", "tool", "browser", "search", "shell", "mcp"]},
+    {"name": "内容理解", "keywords": ["doc", "pdf", "content", "media", "read", "write", "summary", "transcript"]},
+    {"name": "专家协作", "keywords": ["agent", "team", "expert", "delegate", "invest", "collaborat"]},
+    {"name": "自动化任务", "keywords": ["task", "workflow", "cron", "automation", "schedule"]},
+)
 
 PROFILE_DEFINITIONS = (
     {
@@ -64,18 +77,31 @@ URL_SECRET_RE = re.compile(
 LONG_CREDENTIAL_RE = re.compile(r"\b(?:sk|pk|ghp|xox[baprs])[-_][A-Za-z0-9_-]{12,}\b")
 
 
+SECURITY_SETTINGS = SecuritySettings.from_env()
 app = FastAPI(
     title="Hermes Office Mobile BFF",
     version="0.1.0",
-    description="Read-only local status API for the Hermes mobile office.",
+    description="Authenticated BFF for the Hermes mobile office.",
 )
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=False,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=[SECURITY_SETTINGS.allowed_origin],
+    allow_credentials=True,
+    allow_methods=["GET", "HEAD", "POST", "OPTIONS"],
+    allow_headers=[
+        "Accept",
+        "Content-Type",
+        "Idempotency-Key",
+        "X-Hermes-CSRF",
+        "X-Request-ID",
+    ],
 )
+SECURITY_MANAGER = SecurityManager(SECURITY_SETTINGS)
+
+
+@app.middleware("http")
+async def local_security_middleware(request: Request, call_next: Any):
+    return await SECURITY_MANAGER.handle(request, call_next)
 
 
 class MessageRequest(BaseModel):
@@ -85,6 +111,11 @@ class MessageRequest(BaseModel):
 
 class OutboxRetryRequest(BaseModel):
     limit: int = Field(default=10, ge=1, le=50)
+    allow_stale: bool = False
+
+
+class LoginRequest(BaseModel):
+    password: str = Field(..., min_length=1, max_length=256)
 
 
 def utc_now() -> str:
@@ -290,6 +321,7 @@ def compact_outbox_record(record: dict[str, Any]) -> dict[str, Any]:
         "message_preview": message[:80] + ("…" if len(message) > 80 else ""),
         "stored_at": safe_string(record.get("stored_at")),
         "fallback_reason": safe_string(record.get("fallback_reason")),
+        "stale": outbox_is_stale(record),
     }
 
 
@@ -348,6 +380,18 @@ def safe_string(value: Any, limit: int = 160) -> str | None:
 
 def task_time_value(value: Any) -> str | None:
     return safe_string(value, limit=64)
+def outbox_is_stale(record: dict[str, Any], now: datetime | None = None) -> bool:
+    value = record.get("stored_at")
+    if not isinstance(value, str) or not value:
+        return False
+    try:
+        stored_at = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return False
+    if stored_at.tzinfo is None:
+        stored_at = stored_at.replace(tzinfo=timezone.utc)
+    reference = now or datetime.now(timezone.utc)
+    return stored_at < reference - timedelta(hours=OUTBOX_STALE_AFTER_HOURS)
 
 
 def task_sort_value(value: str | None) -> float:
@@ -477,6 +521,25 @@ def directory_children(path: Path) -> list[Path]:
         return [item for item in path.iterdir() if not item.name.startswith(".")]
     except OSError:
         return []
+
+
+def _build_capabilities(skill_entries: list[Path]) -> list[dict[str, Any]]:
+    """Build capability matrix by matching skill names against keyword groups."""
+    capability_groups = (
+        {"name": "工具调用", "keywords": ["api", "cli", "tool", "browser", "search", "shell", "mcp"]},
+        {"name": "内容理解", "keywords": ["doc", "pdf", "content", "media", "read", "write", "summary", "transcript"]},
+        {"name": "专家协作", "keywords": ["agent", "team", "expert", "delegate", "invest", "collaborat"]},
+        {"name": "自动化任务", "keywords": ["task", "workflow", "cron", "automation", "schedule"]},
+    )
+    result = []
+    for group in capability_groups:
+        matched = [
+            {"name": e.name, "modified_at": iso_mtime(e)}
+            for e in skill_entries
+            if any(k in e.name.lower() for k in group["keywords"])
+        ]
+        result.append({"name": group["name"], "matched": matched})
+    return result
 
 
 def evolution_trend(skill_entries: list[Path], profile_documents: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -669,6 +732,24 @@ def evolution_skill_tree(skill_entries: list[Path]) -> list[dict[str, Any]]:
     return tree
 
 
+@app.get("/api/session")
+def session(request: Request) -> JSONResponse:
+    return JSONResponse(
+        content=SECURITY_MANAGER.session_payload(request),
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+@app.post("/api/auth/login")
+async def login(request: Request, payload: LoginRequest) -> JSONResponse:
+    return await SECURITY_MANAGER.login(request, payload.password)
+
+
+@app.post("/api/auth/logout")
+def logout(request: Request) -> JSONResponse:
+    return SECURITY_MANAGER.logout(request)
+
+
 @app.get("/api/health")
 def health() -> dict[str, Any]:
     channels = []
@@ -781,19 +862,288 @@ def evolution() -> dict[str, Any]:
             "available": SKILLS_HOME.is_dir(),
             "count": len(skill_entries),
             "recent": [
-                {"name": item.name, "modified_at": iso_mtime(item)} for item in latest_skills
+                {"name": item.name, "modified_at": iso_mtime(item)} for item in skill_entries
             ],
         },
         "profiles": profile_documents,
         "trend": evolution_trend(skill_entries, profile_documents),
-        "milestones": evolution_milestones(latest_skills, profile_documents),
+        "milestones": evolution_milestones(skill_entries, profile_documents),
+        "capabilities": _build_capabilities(skill_entries),
         "skill_tree": evolution_skill_tree(skill_entries),
     }
+
+
+
+
+def open_kanban_db() -> sqlite3.Connection | None:
+    if not KANBAN_DB.is_file():
+        return None
+    try:
+        conn = sqlite3.connect(f"file:{KANBAN_DB}?mode=ro", uri=True)
+        conn.row_factory = sqlite3.Row
+        return conn
+    except sqlite3.Error:
+        return None
+
+
+def epoch_to_iso(value: Any) -> str | None:
+    if value is None or value == "":
+        return None
+    try:
+        ts = float(value)
+    except (TypeError, ValueError):
+        return safe_string(value, limit=64)
+    if ts > 1_000_000_000_000:
+        ts = ts / 1000.0
+    try:
+        return datetime.fromtimestamp(ts, timezone.utc).isoformat()
+    except (OverflowError, OSError, ValueError):
+        return None
+
+
+def map_kanban_status(raw: Any) -> str:
+    status = str(raw or "").strip().lower()
+    if status == "running":
+        return "running"
+    if status == "blocked":
+        return "blocked"
+    if status == "done":
+        return "completed"
+    if status in {"ready", "todo", "triage", "scheduled"}:
+        return "queued"
+    if status == "archived":
+        return "completed"
+    return "failed"
+
+
+def _row_get(row: sqlite3.Row | dict[str, Any], key: str) -> Any:
+    try:
+        return row[key]
+    except (KeyError, IndexError, TypeError):
+        return None
+
+
+def latest_block_reason(conn: sqlite3.Connection, task_id: str, task_row: sqlite3.Row | dict[str, Any]) -> str | None:
+    try:
+        comment = conn.execute(
+            """
+            SELECT body FROM task_comments
+            WHERE task_id = ?
+            ORDER BY created_at DESC, id DESC
+            LIMIT 8
+            """,
+            (task_id,),
+        ).fetchall()
+    except sqlite3.Error:
+        comment = []
+    for item in comment:
+        body = safe_string(_row_get(item, "body"), limit=240)
+        if not body:
+            continue
+        if "BLOCKED" in body.upper() or "阻塞" in body:
+            return body
+    try:
+        events = conn.execute(
+            """
+            SELECT kind, payload FROM task_events
+            WHERE task_id = ?
+            ORDER BY created_at DESC, id DESC
+            LIMIT 12
+            """,
+            (task_id,),
+        ).fetchall()
+    except sqlite3.Error:
+        events = []
+    for item in events:
+        kind = str(_row_get(item, "kind") or "").lower()
+        payload_raw = _row_get(item, "payload")
+        payload_text = ""
+        summary = None
+        if isinstance(payload_raw, str) and payload_raw.strip():
+            payload_text = payload_raw
+            try:
+                payload_obj = json.loads(payload_raw)
+                if isinstance(payload_obj, dict):
+                    summary = (
+                        payload_obj.get("summary")
+                        or payload_obj.get("reason")
+                        or payload_obj.get("error")
+                        or payload_obj.get("message")
+                    )
+            except json.JSONDecodeError:
+                summary = None
+        if kind == "blocked" or "block" in kind:
+            text = safe_string(summary or payload_text, limit=240)
+            if text:
+                return text
+    failure = safe_string(_row_get(task_row, "last_failure_error"), limit=240)
+    if failure:
+        return failure
+    body = safe_string(_row_get(task_row, "body"), limit=240)
+    return body
+
+
+def latest_task_comment(conn: sqlite3.Connection, task_id: str) -> str | None:
+    try:
+        row = conn.execute(
+            """
+            SELECT body FROM task_comments
+            WHERE task_id = ?
+            ORDER BY created_at DESC, id DESC
+            LIMIT 1
+            """,
+            (task_id,),
+        ).fetchone()
+    except sqlite3.Error:
+        return None
+    if not row:
+        return None
+    return safe_string(_row_get(row, "body"), limit=240)
+
+
+def latest_completion_summary(conn: sqlite3.Connection, task_id: str) -> str | None:
+    try:
+        rows = conn.execute(
+            """
+            SELECT kind, payload FROM task_events
+            WHERE task_id = ?
+            ORDER BY created_at DESC, id DESC
+            LIMIT 20
+            """,
+            (task_id,),
+        ).fetchall()
+    except sqlite3.Error:
+        return None
+    for item in rows:
+        kind = str(_row_get(item, "kind") or "").lower()
+        if kind not in {"completed", "done"}:
+            continue
+        payload_raw = _row_get(item, "payload")
+        if not isinstance(payload_raw, str) or not payload_raw.strip():
+            continue
+        try:
+            payload_obj = json.loads(payload_raw)
+        except json.JSONDecodeError:
+            return safe_string(payload_raw, limit=240)
+        if isinstance(payload_obj, dict):
+            summary = (
+                payload_obj.get("summary")
+                or payload_obj.get("result")
+                or payload_obj.get("message")
+            )
+            text = safe_string(summary, limit=240)
+            if text:
+                return text
+        return safe_string(payload_raw, limit=240)
+    return None
+
+
+def list_kanban_tasks(include_archived: bool = False, limit: int = 100) -> dict[str, Any]:
+    limit = max(1, min(int(limit or 100), 300))
+    empty = {
+        "available": False,
+        "source": str(KANBAN_DB),
+        "total": 0,
+        "status_counts": {},
+        "items": [],
+    }
+    conn = open_kanban_db()
+    if conn is None:
+        return empty
+    try:
+        sql = """
+            SELECT id, title, body, assignee, status, priority, created_by,
+                   created_at, started_at, completed_at, last_heartbeat_at,
+                   last_failure_error, block_kind, result, session_id, worker_pid
+            FROM tasks
+        """
+        params: list[Any] = []
+        if not include_archived:
+            sql += " WHERE COALESCE(status, '') != 'archived'"
+        sql += " ORDER BY COALESCE(last_heartbeat_at, started_at, completed_at, created_at) DESC LIMIT ?"
+        params.append(limit)
+        rows = conn.execute(sql, params).fetchall()
+        items: list[dict[str, Any]] = []
+        for row in rows:
+            task_id = str(_row_get(row, "id") or "").strip()
+            if not task_id:
+                continue
+            raw_status = str(_row_get(row, "status") or "").strip()
+            mapped = map_kanban_status(raw_status)
+            block_reason = latest_block_reason(conn, task_id, row)
+            latest_comment = latest_task_comment(conn, task_id)
+            heartbeat_at = epoch_to_iso(_row_get(row, "last_heartbeat_at"))
+            time_value = (
+                heartbeat_at
+                or epoch_to_iso(_row_get(row, "started_at"))
+                or epoch_to_iso(_row_get(row, "completed_at"))
+                or epoch_to_iso(_row_get(row, "created_at"))
+            )
+            result_text = safe_string(_row_get(row, "result"), limit=180)
+            completion_summary = latest_completion_summary(conn, task_id)
+            if mapped == "blocked":
+                detail = block_reason or latest_comment or "任务已阻塞，等待处理"
+            elif mapped == "completed":
+                detail = result_text or completion_summary or f"Kanban 状态 {raw_status or 'done'}"
+            elif mapped == "queued":
+                detail = f"等待执行 · 原状态 {raw_status or 'todo'}"
+            elif mapped == "running":
+                detail = latest_comment or result_text or "Kanban 任务执行中"
+            else:
+                detail = block_reason or latest_comment or f"Kanban 状态 {raw_status or 'unknown'}"
+            agent_id = safe_string(_row_get(row, "assignee"), limit=64) or safe_string(
+                _row_get(row, "created_by"), limit=64
+            )
+            action_url = f"/?view=agent&id={agent_id}" if agent_id else None
+            items.append(
+                {
+                    "id": f"kanban:{task_id}",
+                    "kanban_id": task_id,
+                    "title": message_title(_row_get(row, "title"), f"Kanban 任务 {task_id}"),
+                    "agent_id": agent_id,
+                    "status": mapped,
+                    "source": "kanban",
+                    "time": time_value,
+                    "detail": safe_string(detail, limit=240),
+                    # blocked: surface block reason; others only surface last_failure_error
+                    "fallback_reason": (
+                        block_reason
+                        if mapped == "blocked"
+                        else safe_string(_row_get(row, "last_failure_error"), limit=240)
+                    ),
+                    "kanban_status": safe_string(raw_status, limit=32),
+                    "priority": _row_get(row, "priority"),
+                    "block_kind": safe_string(_row_get(row, "block_kind"), limit=64),
+                    "latest_comment": latest_comment,
+                    "heartbeat_at": heartbeat_at,
+                    "session_id": safe_string(_row_get(row, "session_id"), limit=128),
+                    "action_url": action_url,
+                }
+            )
+        status_counts = dict(Counter(str(item["status"]) for item in items))
+        return {
+            "available": True,
+            "source": str(KANBAN_DB),
+            "total": len(items),
+            "status_counts": status_counts,
+            "items": items,
+        }
+    except sqlite3.Error:
+        return empty
+    finally:
+        conn.close()
 
 
 @app.get("/api/cron")
 def cron() -> dict[str, Any]:
     return {"generated_at": utc_now(), **cron_summary()}
+
+
+
+@app.get("/api/kanban/tasks")
+def kanban_tasks(include_archived: int = 0, limit: int = 100) -> dict[str, Any]:
+    payload = list_kanban_tasks(include_archived=bool(include_archived), limit=limit)
+    return {"generated_at": utc_now(), **payload}
 
 
 @app.get("/api/tasks")
@@ -857,6 +1207,10 @@ def tasks() -> dict[str, Any]:
             "fallback_reason": None,
         })
 
+    for item in list_kanban_tasks(include_archived=False, limit=100).get("items", []):
+        if isinstance(item, dict):
+            items.append(item)
+
     items.sort(key=lambda item: task_sort_value(item.get("time")), reverse=True)
     status_counts = Counter(str(item["status"]) for item in items)
     return {
@@ -906,14 +1260,69 @@ def workspace_activity(workspace_name: str) -> dict[str, Any]:
     }
 
 
+DELEGATION_LIVE = HERMES_HOME / "cache" / "delegation" / "live"
+
+
+@app.get("/api/delegation/{delegation_id}/tasks")
+def delegation_tasks(delegation_id: str) -> dict[str, Any]:
+    """Read delegation live tasks from ~/.hermes/cache/delegation/live/<id>/."""
+    safe_id = redact_text(delegation_id.strip(), limit=128)
+    base = DELEGATION_LIVE / safe_id
+    if not base.is_dir():
+        return {
+            "generated_at": utc_now(),
+            "delegation_id": safe_id,
+            "available": False,
+            "tasks": [],
+        }
+
+    manifest_path = base / "manifest.json"
+    tasks: list[dict[str, Any]] = []
+
+    if manifest_path.is_file():
+        try:
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            for t in manifest.get("tasks", []):
+                log_path_str = t.get("log")
+                log_summary = ""
+                if log_path_str:
+                    log_path = Path(log_path_str)
+                    if log_path.is_file():
+                        try:
+                            lines = log_path.read_text(encoding="utf-8", errors="replace").splitlines()
+                            # Take last 3 non-empty lines as summary
+                            non_empty = [l.strip() for l in lines if l.strip() and not l.startswith("===") and not l.startswith("---")]
+                            log_summary = " | ".join(non_empty[-3:]) if non_empty else ""
+                        except OSError:
+                            log_summary = ""
+                tasks.append({
+                    "index": t.get("index"),
+                    "goal": redact_text(t.get("goal") or "", limit=400),
+                    "status": t.get("status") or "unknown",
+                    "log_summary": log_summary,
+                })
+        except (OSError, UnicodeError, json.JSONDecodeError):
+            pass
+
+    return {
+        "generated_at": utc_now(),
+        "delegation_id": safe_id,
+        "available": True,
+        "tasks": tasks,
+    }
+
+
 @app.get("/api/outbox")
 def outbox() -> dict[str, Any]:
     records = read_outbox_records()
+    stale_count = sum(1 for record in records if outbox_is_stale(record))
     recent = [compact_outbox_record(record) for record in records[-50:]]
     return {
         "generated_at": utc_now(),
         "source": str(OUTBOX_FILE),
         "count": len(records),
+        "stale_count": stale_count,
+        "stale_after_hours": OUTBOX_STALE_AFTER_HOURS,
         "items": recent,
     }
 
@@ -924,9 +1333,14 @@ def retry_outbox(payload: OutboxRetryRequest) -> dict[str, Any]:
     remaining: list[dict[str, Any]] = []
     attempted = 0
     delivered = 0
+    skipped_stale = 0
     failures: list[dict[str, Any]] = []
 
     for record in records:
+        if not payload.allow_stale and outbox_is_stale(record):
+            remaining.append(record)
+            skipped_stale += 1
+            continue
         if attempted >= payload.limit:
             remaining.append(record)
             continue
@@ -972,6 +1386,7 @@ def retry_outbox(payload: OutboxRetryRequest) -> dict[str, Any]:
         "attempted": attempted,
         "delivered": delivered,
         "remaining": len(remaining),
+        "skipped_stale": skipped_stale,
         "failures": failures[:10],
         "generated_at": utc_now(),
     }
@@ -1225,6 +1640,178 @@ async def save_workflow_api(workflow: Workflow):
     }
 
 
+@app.post("/api/experts/summarize")
+async def summarize_expert_batch(batch_id: str | None = None):
+    """聚合同 batch_id 的三条专家回复，调用 LLM 合成结论。"""
+    import yaml, urllib.request
+
+    # ── 1. 读取路由配置（只读一次） ────────────────────────────
+    try:
+        with open("/home/agentuser/.hermes/config/model_route_table.yaml") as f:
+            route_cfg = yaml.safe_load(f)
+        cc_routes = route_cfg.get("routes", {}).get("claude_code", [])
+        if not cc_routes:
+            return JSONResponse(status_code=500, content={"error": "路由表无 claude_code 条目"})
+        top = cc_routes[0]
+        llm_base_url = top["base_url"]
+        llm_model = top["model"]
+        api_key = top.get("key") or top.get("api_key")
+        if not api_key:
+            env_path = Path("/home/agentuser/.hermes/.env")
+            for line in env_path.read_text(encoding="utf-8").splitlines():
+                if line.startswith("GY_API_KEY="):
+                    api_key = line.split("=", 1)[1].strip()
+                    break
+        if not api_key:
+            return JSONResponse(status_code=500, content={"error": "API key 未找到"})
+    except Exception as exc:
+        return JSONResponse(status_code=500, content={"error": f"配置读取失败: {exc}"})
+
+    # ── 3. 找同 batch_id 的三条专家回复 ───────────────────────
+    try:
+        with open("/home/agentuser/projects/hermes-office-mobile/backend/runtime/sent.jsonl", encoding="utf-8") as f:
+            lines = f.readlines()
+    except FileNotFoundError:
+        return JSONResponse(status_code=404, content={"error": "sent.jsonl 不存在"})
+
+    batch_msgs = {}
+    found_batch_id = batch_id  # None if not specified
+    for line in reversed(lines):
+        try:
+            rec = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        bid = rec.get("batch_id")
+        # 锁定第一个遇到的 bid，防止不同 batch 混进同一条
+        if found_batch_id is None:
+            found_batch_id = bid
+        if bid != found_batch_id:
+            continue
+        agent = rec.get("agent_id", "unknown")
+        resp = rec.get("response_preview", "")
+        if agent not in batch_msgs:
+            batch_msgs[agent] = resp
+        if len(batch_msgs) >= 2:
+            break
+
+    if len(batch_msgs) < 1:
+        return JSONResponse(status_code=404, content={
+            "error": f"batch_id={batch_id or found_batch_id} 专家回复不足1条",
+            "found": len(batch_msgs),
+            "agents": list(batch_msgs.keys())
+        })
+
+    # ── 4. 调用 LLM 合成 ──────────────────────────────────────
+    summarize_prompt = (
+        "你是小黑，负责把专家们的回答聚合成一段简洁结论（100字以内）。\n\n"
+        + "\n".join([f"【{k}】: {v}" for k, v in batch_msgs.items()])
+    )
+
+    import asyncio
+    def _sync_call(url, key, model, prompt):
+        body = json.dumps({"model": model, "messages": [{"role": "user", "content": prompt}], "max_tokens": 300}).encode()
+        req = urllib.request.Request(url, data=body, headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json", "User-Agent": "Mozilla/5.0"}, method="POST")
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            return json.loads(resp.read())["choices"][0]["message"]["content"]
+
+    loop = asyncio.get_running_loop()
+    try:
+        summary = await loop.run_in_executor(None, lambda: _sync_call(f"{llm_base_url}/v1/chat/completions", api_key, llm_model, summarize_prompt))
+    except Exception as exc:
+        return JSONResponse(status_code=502, content={"error": f"LLM 调用失败: {exc}"})
+
+    return {
+        "ok": True,
+        "summary": summary,
+        "batch_id": batch_id or found_batch_id,
+        "model": llm_model,
+        "base_url": llm_base_url,
+        "source_agents": list(batch_msgs.keys()),
+    }
+
+
+@app.post("/api/kanban/unblock/{task_id}")
+async def kanban_unblock(task_id: str):
+    """调用 hermes kanban promote 解除阻塞。"""
+    import re
+    if not re.match(r"^[a-z0-9_-]{1,64}$", task_id):
+        return {"ok": False, "error": "invalid task_id format"}
+    import subprocess
+    try:
+        r = subprocess.run(
+            ["hermes", "kanban", "promote", task_id],
+            capture_output=True, text=True, timeout=20,
+            env={**__import__("os").environ, "HERMES_HOME": "/home/agentuser/.hermes"},
+        )
+        return {
+            "ok": r.returncode == 0,
+            "task_id": task_id,
+            "stdout": r.stdout[:200],
+            "stderr": r.stderr[:200],
+        }
+    except Exception as exc:
+        return JSONResponse(status_code=500, content={"error": str(exc)})
+
+
+@app.get("/api/topics")
+async def get_topics():
+    """返回选题列表，优先读当天文件，文件过期或不存在则返回空列表。"""
+    from datetime import datetime
+    today = datetime.now().strftime("%Y-%m-%d")
+    topic_file = Path(f"/tmp/topics_{today}.md")
+    yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
+    fallback = Path(f"/tmp/topics_{yesterday}.md")
+    source_file = topic_file if topic_file.exists() else fallback
+
+    if not source_file.exists():
+        return {"ok": True, "topics": [], "source": "none", "message": "暂无选题数据"}
+
+    # 检查是否过期（超过48小时）
+    age_hours = (datetime.now().timestamp() - source_file.stat().st_mtime) / 3600
+    if age_hours > 48:
+        return {"ok": True, "topics": [], "source": "expired", "message": "选题数据已过期"}
+
+    try:
+        content = source_file.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return {"ok": True, "topics": [], "source": "read_error"}
+    topics = []
+    current = {}
+    for line in content.splitlines():
+        line = line.strip()
+        if ("【" in line and "】" in line) or line.startswith("标题：") or line.startswith("标题 "):
+            if current and current.get("title"):
+                topics.append(current)
+                current = {}
+            # 格式：【标题】 或 标题：xxx 或 1. 标题：xxx
+            if "【" in line and "】" in line:
+                title = line.split("【", 1)[-1].split("】", 1)[0].strip()
+            else:
+                title = line.split("：", 1)[-1].strip() if "：" in line else line.split(".", 1)[-1].strip()
+            current["title"] = title
+        elif line.startswith("平台："):
+            current["platform"] = line.split("：", 1)[-1].strip()
+        elif line.startswith("理由：") or line.startswith("推荐理由："):
+            current["reason"] = line.split("：", 1)[-1].strip()
+        elif line.startswith("价值："):
+            current["value"] = line.split("：", 1)[-1].strip()
+    if current and current.get("title"):
+        topics.append(current)
+
+    # 补全默认值
+    for t in topics:
+        t.setdefault("platform", "公众号")
+        t.setdefault("reason", "")
+        t.setdefault("value", "")
+
+    return {
+        "ok": True,
+        "topics": topics,
+        "source": source_file.name,
+        "generated_at": datetime.fromtimestamp(source_file.stat().st_mtime).isoformat(),
+    }
+
+
 @app.post("/api/workflows/execute")
 async def execute_workflow(payload: dict):
     """Honest simulated execution until real Hermes node runner lands."""
@@ -1245,4 +1832,300 @@ async def execute_workflow(payload: dict):
         "executed_nodes": len(nodes),
         "edge_count": len(edges),
         "timestamp": utc_now(),
+    }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 深度分析串行流水线端点
+# ─────────────────────────────────────────────────────────────────────────────
+
+class PipelineRequest(BaseModel):
+    workspace_name: str
+    goal: str
+    question: str
+    member_ids: list[str] = ["default", "media-ops", "investor"]
+    pipeline_type: str = "serial"
+
+
+def _sync_llm_call(url: str, key: str, model: str, prompt: str, max_tokens: int = 500) -> str:
+    """同步调用 LLM，返回文本内容。"""
+    body = json.dumps({
+        "model": model,
+        "messages": [{"role": "user", "content": prompt}],
+        "max_tokens": max_tokens
+    }).encode()
+    req = urllib.request.Request(
+        url, data=body,
+        headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json", "User-Agent": "Mozilla/5.0"},
+        method="POST"
+    )
+    with urllib.request.urlopen(req, timeout=60) as resp:
+        return json.loads(resp.read())["choices"][0]["message"]["content"]
+
+
+def _read_agent_response(batch_id: str, target_agent: str | None = None) -> dict[str, str]:
+    """从 sent.jsonl 读取指定 batch_id 的回复。返回 {agent_id: response_preview}。"""
+    try:
+        with open(SENT_FILE, encoding="utf-8") as f:
+            lines = f.readlines()
+    except FileNotFoundError:
+        return {}
+
+    batch_msgs: dict[str, str] = {}
+    found_batch_id: str | None = batch_id
+
+    for line in reversed(lines):
+        try:
+            rec = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        bid = rec.get("batch_id")
+        if found_batch_id is None:
+            found_batch_id = bid
+        if bid != found_batch_id:
+            continue
+        agent = rec.get("agent_id", "unknown")
+        resp = rec.get("response_preview", "")
+        if target_agent and agent != target_agent:
+            continue
+        if agent not in batch_msgs:
+            batch_msgs[agent] = resp
+        # 如果指定了 target_agent，只取一条
+        if target_agent and len(batch_msgs) >= 1:
+            break
+        # 否则取完所有（通常 3 个 agent）
+        if len(batch_msgs) >= 3:
+            break
+
+    return batch_msgs
+
+
+def _wait_for_response(batch_id: str, agent_id: str, timeout: int = 30) -> str | None:
+    """轮询等待某个 agent 的回复。"""
+    import time
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        results = _read_agent_response(batch_id, agent_id)
+        if agent_id in results and results[agent_id]:
+            return results[agent_id]
+        time.sleep(1)
+    return None
+
+
+def _get_llm_config() -> tuple[str, str, str]:
+    """读取 LLM 配置：base_url, model, api_key。
+    默认使用 Dragon relay + gpt-5.6-sol。"""
+    import os
+
+    dragon_key = os.environ.get("DRAGON_API_KEY", "")
+    if not dragon_key:
+        env_file = Path.home() / ".hermes/profiles/default/.env"
+        if env_file.exists():
+            for line in env_file.read_text(encoding="utf-8").splitlines():
+                if line.startswith("DRAGON_API_KEY="):
+                    dragon_key = line.split("=", 1)[1].strip()
+                    break
+
+    if not dragon_key:
+        raise ValueError("DRAGON_API_KEY 未找到")
+
+    return (
+        "https://newapi.dragon3api.com/v1",
+        "gpt-5.6-sol",
+        dragon_key,
+    )
+
+
+def _send_to_hermes(agent_id: str, message: str, batch_id: str) -> dict[str, Any]:
+    """通过 Hermes 发送消息到指定 agent。"""
+    profile_map = {
+        "default": ("mimo-sg1", 8642),
+        "media-ops": ("mimo-sg2", 8650),
+        "investor": ("mimo-sg3", 8660),
+    }
+    profile_name, port = profile_map.get(agent_id, ("mimo-sg1", 8642))
+
+    payload = {
+        "jsonrpc": "2.0",
+        "method": "user_message",
+        "params": {
+            "message": message,
+            "stream": False,
+        },
+        "id": f"pipeline-{batch_id}-{agent_id}",
+    }
+
+    body = json.dumps(payload).encode()
+    headers = {"Content-Type": "application/json", "User-Agent": "Hermes-BFF/1.0"}
+
+    try:
+        req = urllib.request.Request(
+            f"http://localhost:{port}/rpc",
+            data=body,
+            headers=headers,
+            method="POST"
+        )
+        with urllib.request.urlopen(req, timeout=MESSAGE_TIMEOUT_SECONDS) as resp:
+            result = json.loads(resp.read())
+            return {"ok": True, "delivered": True, "result": result}
+    except Exception as exc:
+        # 离线或不可达时记录但不中断流程
+        return {"ok": False, "delivered": False, "error": str(exc)}
+
+
+@app.post("/api/experts/pipeline")
+async def run_expert_pipeline(req: PipelineRequest):
+    """
+    深度分析串行流水线：
+    1. 小黑(CEO) 先回答 → 获取回复
+    2. 叠加上下文 → 小橙(PM) 回答 → 获取回复
+    3. 叠加上下文 → 小金(CS) 回答 → 获取回复
+    4. LLM 综合所有回复生成最终报告
+    """
+    import asyncio
+
+    batch_id = f"pipeline-{datetime.now().strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:6]}"
+    steps: list[dict[str, Any]] = []
+    context_so_far: dict[str, str] = {}
+
+    # 确定需要执行的角色顺序
+    # CEO → PM → CS，只执行在 member_ids 中的
+    role_order = ["default", "media-ops", "investor"]
+    role_prompts = {
+        "default": "你正在参与工作空间“{workspace}”的深度分析。请从主控汇总视角梳理问题、协调判断，并形成可供后续汇总的执行意见。\n\n原始问题：{question}",
+        "media-ops": "你正在参与工作空间“{workspace}”的深度分析。\n\nCEO（小黑）的分析：\n{ceo_response}\n\n请在此基础上，从内容传播视角分析受众、表达、渠道与传播执行重点。",
+        "investor": "你正在参与工作空间“{workspace}”的深度分析。\n\nCEO（小黑）的分析：\n{ceo_response}\n\nPM（小橙）的分析：\n{pm_response}\n\n请在此基础上，从商业风险视角分析价值、成本、回报、约束与潜在风险。",
+    }
+
+    # ── Step 1: 小黑（CEO）────────────────────────────────────────────
+    if "default" in req.member_ids:
+        step: dict[str, Any] = {"agent_id": "default", "status": "pending"}
+        steps.append(step)
+
+        prompt = role_prompts["default"].format(
+            workspace=req.workspace_name,
+            question=req.question,
+        )
+        step["status"] = "running"
+        send_result = _send_to_hermes("default", prompt, batch_id)
+        if send_result.get("delivered"):
+            # 等待回复
+            response = _wait_for_response(batch_id, "default", timeout=40)
+            if response:
+                context_so_far["default"] = response
+                step["status"] = "done"
+                step["response_preview"] = response[:200] + "..." if len(response) > 200 else response
+            else:
+                step["status"] = "error"
+                step["error"] = "等待回复超时"
+        else:
+            step["status"] = "offline"
+            step["error"] = send_result.get("error", "发送失败")
+    else:
+        # 跳过但占位
+        steps.append({"agent_id": "default", "status": "skipped", "reason": "未在成员列表中"})
+
+    # ── Step 2: 小橙（PM）─────────────────────────────────────────────
+    if "media-ops" in req.member_ids:
+        step = {"agent_id": "media-ops", "status": "pending"}
+        steps.append(step)
+
+        ceo_resp = context_so_far.get("default", "（小黑未参与或无回复）")
+        prompt = role_prompts["media-ops"].format(
+            workspace=req.workspace_name,
+            ceo_response=ceo_resp,
+        )
+        step["status"] = "running"
+        send_result = _send_to_hermes("media-ops", prompt, batch_id)
+        if send_result.get("delivered"):
+            response = _wait_for_response(batch_id, "media-ops", timeout=40)
+            if response:
+                context_so_far["media-ops"] = response
+                step["status"] = "done"
+                step["response_preview"] = response[:200] + "..." if len(response) > 200 else response
+            else:
+                step["status"] = "error"
+                step["error"] = "等待回复超时"
+        else:
+            step["status"] = "offline"
+            step["error"] = send_result.get("error", "发送失败")
+    else:
+        steps.append({"agent_id": "media-ops", "status": "skipped", "reason": "未在成员列表中"})
+
+    # ── Step 3: 小金（CS）────────────────────────────────────────────
+    if "investor" in req.member_ids:
+        step = {"agent_id": "investor", "status": "pending"}
+        steps.append(step)
+
+        ceo_resp = context_so_far.get("default", "（小黑未参与或无回复）")
+        pm_resp = context_so_far.get("media-ops", "（小橙未参与或无回复）")
+        prompt = role_prompts["investor"].format(
+            workspace=req.workspace_name,
+            ceo_response=ceo_resp,
+            pm_response=pm_resp,
+        )
+        step["status"] = "running"
+        send_result = _send_to_hermes("investor", prompt, batch_id)
+        if send_result.get("delivered"):
+            response = _wait_for_response(batch_id, "investor", timeout=40)
+            if response:
+                context_so_far["investor"] = response
+                step["status"] = "done"
+                step["response_preview"] = response[:200] + "..." if len(response) > 200 else response
+            else:
+                step["status"] = "error"
+                step["error"] = "等待回复超时"
+        else:
+            step["status"] = "offline"
+            step["error"] = send_result.get("error", "发送失败")
+    else:
+        steps.append({"agent_id": "investor", "status": "skipped", "reason": "未在成员列表中"})
+
+    # ── Step 4: LLM 综合生成最终报告 ─────────────────────────────────
+    final_report = ""
+    synthesize_error = ""
+
+    if context_so_far:
+        try:
+            llm_base_url, llm_model, api_key = _get_llm_config()
+            loop = asyncio.get_running_loop()
+
+            synthesize_prompt = (
+                "你是一个专业的商业分析报告撰写助手。请根据以下三位专家的分析，"
+                "撰写一份结构化的深度分析报告。\n\n"
+                + "\n\n".join([
+                    f"【{k}专家】: {v}" for k, v in context_so_far.items()
+                ])
+                + "\n\n请综合以上分析，生成一份完整、专业的深度分析报告，包括：\n"
+                "1. 执行摘要\n2. 各维度分析（整合 CEO/PM/CS 视角）\n3. 综合结论与建议"
+            )
+
+            final_report = await loop.run_in_executor(
+                None,
+                lambda: _sync_llm_call(
+                    f"{llm_base_url}/v1/chat/completions",
+                    api_key,
+                    llm_model,
+                    synthesize_prompt,
+                    max_tokens=800
+                )
+            )
+        except Exception as exc:
+            synthesize_error = str(exc)
+            # 降级：拼接各专家回复
+            final_report = "\n\n---\n\n".join([
+                f"【{k}专家】: {v}" for k, v in context_so_far.items()
+            ])
+    else:
+        final_report = "⚠️ 所有 Agent 均未成功回复，无法生成报告。请检查各 Agent 在线状态。"
+
+    return {
+        "ok": True,
+        "batch_id": batch_id,
+        "steps": steps,
+        "context_collected": context_so_far,
+        "final_report": final_report,
+        "synthesize_error": synthesize_error if synthesize_error else None,
+        "pipeline_type": req.pipeline_type,
+        "workspace_name": req.workspace_name,
     }
