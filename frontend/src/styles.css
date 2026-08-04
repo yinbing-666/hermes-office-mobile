@@ -153,6 +153,7 @@ p { color: var(--muted); line-height: 1.6; }
 .virtual-office-heading > span i { width: 6px; height: 6px; background: var(--green); border-radius: 50%; box-shadow: 0 0 0 3px #e9f5ee; }
 .office-room { position: relative; height: 252px; margin: 8px -2px -2px; overflow: hidden; border: 1px solid #e4e1da; border-radius: 11px; background: radial-gradient(circle at 50% 30%, rgba(255, 255, 255, .96), rgba(247, 245, 239, .72) 55%, #efede7 100%); perspective: 920px; perspective-origin: 50% 36%; }
 .office-room::after { content: ""; position: absolute; left: 13%; right: 10%; bottom: 13px; height: 30px; background: rgba(97, 88, 73, .15); border-radius: 50%; filter: blur(15px); transform: rotate(-4deg); }
+.office-scene-bg { position: absolute; left: 0; top: 0; width: 100%; height: 100%; object-fit: cover; z-index: 0; border-radius: 10px; }
 .office-world { position: absolute; left: 50%; top: 51%; width: 360px; height: 216px; transform: translate(-50%, -48%) rotateX(58deg) rotateZ(-34deg) scale(.86); transform-style: preserve-3d; }
 .office-platform { position: absolute; inset: 0; background-color: #f5f2e9; background-image: linear-gradient(rgba(207, 202, 190, .55) 1px, transparent 1px), linear-gradient(90deg, rgba(207, 202, 190, .55) 1px, transparent 1px); background-size: 36px 36px; border: 1px solid #d4d0c5; border-radius: 8px; box-shadow: inset 0 0 40px rgba(255, 255, 255, .7), 18px 24px 28px rgba(91, 82, 68, .16); transform-style: preserve-3d; }
 .office-platform::before { content: ""; position: absolute; left: 7px; right: -13px; bottom: -14px; height: 14px; background: linear-gradient(90deg, #d4cec0, #c8c1b3); border-radius: 0 0 6px 6px; transform-origin: top; transform: rotateX(-90deg); box-shadow: 0 8px 12px rgba(85, 76, 62, .12); }
@@ -299,9 +300,11 @@ p { color: var(--muted); line-height: 1.6; }
 .agent-list { display: grid; gap: 10px; }
 .workstation-card { width: 100%; display: grid; grid-template-columns: 82px minmax(0, 1fr) 18px; gap: 13px; align-items: center; padding: 13px; text-align: left; color: var(--text); background: var(--surface); border: 1px solid var(--line); border-radius: 11px; transition: border-color 160ms ease, background 160ms ease; }
 .workstation-card:hover, .workstation-card.active { border-color: #b9d5ef; background: #fbfdff; }
-.desk-scene { position: relative; height: 70px; display: flex; align-items: flex-end; justify-content: space-between; padding: 8px 7px 7px; overflow: hidden; background: #f1f0ed; border: 1px solid #e2e1de; border-radius: 9px; }
-.desk-scene::after { content: ""; position: absolute; left: 7px; right: 7px; bottom: 6px; height: 1px; background: #d2d1cd; }
-.monitor-shell { position: relative; z-index: 1; color: #626a73; }
+.desk-scene { position: relative; height: 70px; overflow: hidden; border-radius: 9px; background: #e8e4dd; }
+.desk-scene .agent-portrait { position: absolute; inset: 0; z-index: 0; width: 100%; height: 100%; border-radius: 0; }
+.desk-scene .agent-portrait img { width: 100% !important; height: 100% !important; object-fit: cover; object-position: center top; clip-path: inset(28% 0 0 0 round 6px) !important; }
+.desk-scene .monitor-shell { position: absolute; left: 50%; bottom: 0; z-index: 2; margin-left: -28px; color: rgba(60, 65, 70, 0.55); }
+.desk-scene .monitor-shell::before { content: ""; position: absolute; left: 50%; bottom: 0; width: 48px; height: 28px; margin-left: -24px; background: rgba(255,255,255,0.38); border: 2px solid rgba(60,65,70,0.28); border-radius: 3px; backdrop-filter: blur(2px); }
 .monitor-signal { position: absolute; top: 5px; right: 4px; width: 5px; height: 5px; border-radius: 50%; background: var(--red); }
 .monitor-signal.online { background: var(--green); }
 .agent-portrait { position: relative; z-index: 2; width: 42px; height: 42px; display: grid; place-items: center; overflow: hidden; color: #56606b; background: transparent; border-radius: 50%; }

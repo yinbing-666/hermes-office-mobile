@@ -326,6 +326,7 @@ function VirtualOfficeCard({ onSelectAgent }: { onSelectAgent: (agentId: string)
       </div>
       <div className="office-room">
         <div className="office-world" aria-hidden="true">
+          <img className="office-scene-bg" src="/images/office-scene.png" alt="" />
           <div className="office-platform" />
           <div className="office-zone-surface kitchen-surface" />
           <div className="office-zone-surface fitness-surface" />
