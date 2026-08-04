@@ -290,10 +290,7 @@ function AgentCard({ agent, active, onClick }: { agent: AgentInfo; active: boole
   return (
     <button className={`workstation-card ${active ? 'active' : ''}`} onClick={onClick}>
       <div className="desk-scene">
-        <div className="monitor-shell">
-          <OfficeIcon name="monitor" size={35} />
-          <span className={`monitor-signal ${agent.status === 'online' ? 'online' : ''}`} />
-        </div>
+        <div className="monitor-shell" />
         <AgentPortrait tone={meta.tone} avatar={meta.avatar} name={agent.name} />
       </div>
       <div className="agent-main">
@@ -326,42 +323,7 @@ function VirtualOfficeCard({ onSelectAgent }: { onSelectAgent: (agentId: string)
       </div>
       <div className="office-room">
         <img className="office-scene-bg" src="/images/office-scene.png" alt="" />
-        <div className="office-world" aria-hidden="true">
-          <div className="office-platform" />
-          <div className="office-zone-surface kitchen-surface" />
-          <div className="office-zone-surface fitness-surface" />
-          <div className="office-zone-surface workstation-surface" />
-          <div className="office-kitchenette">
-            <div className="kitchen-cabinet cabinet-one"><span /><span /></div>
-            <div className="kitchen-cabinet cabinet-two"><span /></div>
-            <div className="kitchen-counter"><span className="kitchen-sink" /><span className="kitchen-machine" /></div>
-            <div className="kitchen-island"><span /></div>
-            <div className="kitchen-stool stool-one" />
-            <div className="kitchen-stool stool-two" />
-          </div>
-          <div className="office-treadmill">
-            <span className="treadmill-belt" />
-            <span className="treadmill-post" />
-            <span className="treadmill-console" />
-          </div>
-          {['one', 'two', 'three', 'four'].map((desk) => (
-            <div className={`office-desk desk-${desk}`} key={desk}>
-              <span className="desk-drawer" />
-              <span className="desk-keyboard" />
-              <span className="desk-cup" />
-              <span className="office-monitor"><i /></span>
-            </div>
-          ))}
-          {['one', 'two', 'three'].map((person) => (
-            <div className={`office-seat seat-${person}`} key={person}>
-              <span className="chair-back" />
-              <span className="office-person"><i /><b /></span>
-            </div>
-          ))}
-          <div className="office-plant plant-one"><i /><span /><span /></div>
-          <div className="office-plant plant-two"><i /><span /><span /></div>
-          <div className="office-plant plant-three"><i /><span /><span /></div>
-        </div>
+        <div className="office-world" aria-hidden="true" />
         <div className="office-annotations" aria-label="办公室分区与员工坐席">
           <span className="office-callout zone-callout kitchen-callout">茶水区 / 厨房</span>
           <span className="office-callout zone-callout fitness-callout">健身区 / 跑步机</span>
