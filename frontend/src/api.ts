@@ -1,31 +1,5 @@
 import type { ActivityItem, AgentInfo, ApiState, CronJob, DelegationTasksData, EvolutionData, MessageResponse, OutboxData, OutboxRetryResponse, TaskItem, TasksData } from './types';
 
-const mockAgents: AgentInfo[] = [
-  { id: 'default', name: '小黑', status: 'online', port: 8642, port_listening: true, profile_available: true },
-  { id: 'media-ops', name: '小橙', status: 'online', port: 8650, port_listening: true, profile_available: true },
-  { id: 'investor', name: '小金', status: 'offline', port: 8660, port_listening: false, profile_available: true },
-];
-
-const mockActivity: ActivityItem[] = [
-  { id: 1, message: '离线模拟：专家团已完成一次定价分析。' },
-  { id: 2, message: '离线模拟：Cron 状态等待后端连接。' },
-];
-
-const mockEvolution: EvolutionData = {
-  skills: { available: false, count: 0, recent: [{ name: '离线模拟：等待读取 skills 目录', modified_at: null }] },
-  profiles: [],
-};
-
-const mockCron: CronJob[] = [
-  { id: 'mock-1', name: '离线模拟：每日晨报', enabled: true, status: 'unknown', schedule: '0 8 * * *' },
-];
-
-const mockTasks: TaskItem[] = [
-  { id: 'mock-running', title: '离线模拟：每日晨报', agent_id: 'default', status: 'running', source: 'cron', detail: '等待后端任务接口连接' },
-  { id: 'mock-blocked', title: '离线模拟：Kanban 阻塞任务', agent_id: 'default', status: 'blocked', source: 'kanban', detail: '等待确认参数', fallback_reason: '等待确认参数', kanban_status: 'blocked', kanban_id: 'mock-blocked', block_kind: 'needs_input', action_url: '/?view=agent&id=default' },
-  { id: 'mock-event', title: '离线模拟：Gateway 活动', status: 'event', source: 'gateway', detail: '当前展示离线预览数据' },
-];
-
 export type SessionData = {
   ok: boolean;
   auth_enabled: boolean;
@@ -160,28 +134,32 @@ async function getJson<T>(url: string, fallback: T): Promise<ApiState<T>> {
     return { data: await response.json() as T, offline: false };
   } catch (error) {
     if (error instanceof Error && /登录|权限/.test(error.message)) throw error;
-    return { data: fallback, offline: true };
+    return {
+      data: fallback,
+      offline: true,
+      error: error instanceof Error ? error.message : '网络请求失败',
+    };
   }
 }
 
 export function fetchAgents() {
-  return getJson<{ agents: AgentInfo[] }>('/api/agents', { agents: mockAgents });
+  return getJson<{ agents: AgentInfo[] }>('/api/agents', { agents: [] });
 }
 
 export function fetchActivity() {
-  return getJson<{ items?: ActivityItem[]; events?: ActivityItem[] }>('/api/activity', { items: mockActivity });
+  return getJson<{ items?: ActivityItem[]; events?: ActivityItem[] }>('/api/activity', { items: [] });
 }
 
 export function fetchEvolution() {
-  return getJson<EvolutionData>('/api/evolution', mockEvolution);
+  return getJson<EvolutionData>('/api/evolution', {});
 }
 
 export function fetchCron() {
-  return getJson<{ jobs: CronJob[]; total?: number; enabled?: number }>('/api/cron', { jobs: mockCron, total: 1, enabled: 1 });
+  return getJson<{ jobs: CronJob[]; total?: number; enabled?: number }>('/api/cron', { jobs: [], total: 0, enabled: 0 });
 }
 
 export function fetchTasks() {
-  return getJson<TasksData>('/api/tasks', { total: mockTasks.length, items: mockTasks });
+  return getJson<TasksData>('/api/tasks', { total: 0, items: [] });
 }
 
 export async function sendMessage(agentId: string, message: string): Promise<MessageResponse> {
@@ -238,6 +216,7 @@ export type PipelineStep = {
 
 export type PipelineResult = {
   ok: boolean;
+  status?: 'queued' | 'running' | 'completed' | 'failed';
   batch_id: string;
   steps: PipelineStep[];
   context_collected: Record<string, string>;
@@ -246,6 +225,39 @@ export type PipelineResult = {
   pipeline_type: string;
   workspace_name: string;
 };
+
+export type TokenUsageData = {
+  ok: boolean;
+  available: boolean;
+  date: string;
+  total: {
+    input_tokens: number;
+    output_tokens: number;
+    cache_read_tokens: number;
+    total_tokens: number;
+    saved_tokens: number;
+    api_calls: number;
+  };
+  by_model: Array<{
+    model: string;
+    provider: string;
+    input_tokens: number;
+    output_tokens: number;
+    cache_read_tokens: number;
+    api_calls: number;
+    last_seen: string | null;
+  }>;
+};
+
+export async function fetchTokenUsage() {
+  return getJson<TokenUsageData>('/api/token-usage', {
+    ok: true,
+    available: false,
+    date: '',
+    total: { input_tokens: 0, output_tokens: 0, cache_read_tokens: 0, total_tokens: 0, saved_tokens: 0, api_calls: 0 },
+    by_model: [],
+  });
+}
 
 export async function runExpertPipeline(
   workspaceName: string,
@@ -266,4 +278,31 @@ export async function runExpertPipeline(
   );
   if (!data.ok) throw new Error(`Pipeline failed: ${JSON.stringify(data)}`);
   return data;
+}
+
+export async function fetchExpertPipeline(batchId: string): Promise<PipelineResult> {
+  const response = await fetch(`/api/experts/pipeline/${encodeURIComponent(batchId)}`, {
+    headers: { Accept: 'application/json' },
+    credentials: 'same-origin',
+    cache: 'no-store',
+  });
+  const data = await response.json().catch(() => null) as (PipelineResult & { error?: string }) | null;
+  if (!response.ok || !data?.ok) {
+    throw new Error(data?.error || `HTTP ${response.status}`);
+  }
+  return data;
+}
+
+export async function waitForExpertPipeline(
+  batchId: string,
+  onUpdate?: (result: PipelineResult) => void,
+): Promise<PipelineResult> {
+  const deadline = Date.now() + 5 * 60 * 1000;
+  while (Date.now() < deadline) {
+    const result = await fetchExpertPipeline(batchId);
+    onUpdate?.(result);
+    if (result.status === 'completed' || result.status === 'failed') return result;
+    await new Promise((resolve) => window.setTimeout(resolve, 1000));
+  }
+  throw new Error('专家流水线状态查询超时，请稍后按批次查看结果');
 }

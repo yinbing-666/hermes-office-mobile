@@ -33,17 +33,26 @@ export interface CronJob {
   last_run_at?: string | null;
 }
 
-export type TaskStatus = 'running' | 'completed' | 'queued' | 'failed' | 'paused' | 'event';
+export type TaskStatus = 'running' | 'blocked' | 'completed' | 'queued' | 'failed' | 'paused' | 'event';
 
 export interface TaskItem {
   id: string;
   title: string;
   agent_id?: string | null;
   status: TaskStatus;
-  source: 'cron' | 'outbox' | 'sent' | 'gateway' | string;
+  source: 'cron' | 'outbox' | 'sent' | 'gateway' | 'kanban' | string;
   time?: string | null;
   detail?: string | null;
   fallback_reason?: string | null;
+  kanban_status?: string | null;
+  kanban_id?: string | null;
+  latest_comment?: string | null;
+  heartbeat_at?: string | null;
+  block_kind?: string | null;
+  session_id?: string | null;
+  action_url?: string | null;
+  priority?: number | string | null;
+  delegation_id?: string | null;
 }
 
 export interface TasksData {
@@ -82,6 +91,10 @@ export interface EvolutionData {
     title: string;
     children: Array<{ name: string; modified_at: string | null }>;
   }>;
+  capabilities?: Array<{
+    name: string;
+    matched: Array<{ name: string; modified_at: string | null }>;
+  }>;
 }
 
 export interface MessageResponse {
@@ -108,6 +121,21 @@ export interface OutboxItem {
 export interface OutboxData {
   count: number;
   items: OutboxItem[];
+  stale_count?: number;
+  stale_after_hours?: number;
+}
+
+export interface DelegationTask {
+  index: number;
+  goal: string;
+  status: string;
+  log_summary: string;
+}
+
+export interface DelegationTasksData {
+  delegation_id: string;
+  available: boolean;
+  tasks: DelegationTask[];
 }
 
 export interface OutboxRetryResponse {
@@ -116,10 +144,12 @@ export interface OutboxRetryResponse {
   delivered: number;
   remaining: number;
   generated_at: string;
+  skipped_stale?: number;
   failures?: Array<{ id?: number | string; agent_id: string; fallback_reason: string }>;
 }
 
 export interface ApiState<T> {
   data: T;
   offline: boolean;
+  error?: string;
 }

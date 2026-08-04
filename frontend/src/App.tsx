@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
-import { fetchAgents, fetchEvolution, fetchOutbox, fetchTasks, fetchDelegationTasks, retryOutbox, sendMessage, fetchTopics, runExpertPipeline, fetchSession, loginWithPassword, logoutSession } from './api';
+import { fetchAgents, fetchEvolution, fetchOutbox, fetchTasks, fetchDelegationTasks, retryOutbox, sendMessage, fetchTopics, runExpertPipeline, waitForExpertPipeline, fetchSession, loginWithPassword, logoutSession, fetchTokenUsage } from './api';
 import type { PipelineStep, PipelineResult, SessionData } from './api';
 import { OfficeIcon, type OfficeIconName } from './components/OfficeIcon';
 import { LoginPage } from './LoginPage';
@@ -251,7 +251,7 @@ function OfflineBanner({ show }: { show: boolean }) {
   return (
     <div className="offline-banner">
       <OfficeIcon name="alert" size={17} />
-      <span><strong>后端暂时离线。</strong> 当前显示离线缓存或模拟数据，仍可继续浏览；连接恢复后会自动切换真实状态。</span>
+      <span><strong>后端暂时离线。</strong> 当前不显示在线、送达或完成状态；连接恢复后再读取真实数据。</span>
     </div>
   );
 }
@@ -374,7 +374,37 @@ function VirtualOfficeCard({ onSelectAgent }: { onSelectAgent: (agentId: string)
   );
 }
 
+function formatNum(n: number): string {
+  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M';
+  if (n >= 1_000) return (n / 1_000).toFixed(1) + 'K';
+  return String(n);
+}
+
 function ResourceTaskOverview({ tasks }: { tasks: TaskItem[] }) {
+  const [tokenData, setTokenData] = useState<{ total: number; byModel: Array<{model: string; tokens: number}>; loaded: boolean }>({ total: 0, byModel: [], loaded: false });
+
+  useEffect(() => {
+    fetchTokenUsage().then((res) => {
+      if (res.data?.available) {
+        const byModel: Array<{model: string; tokens: number}> = [];
+        const modelMap = new Map<string, number>();
+        for (const m of res.data.by_model ?? []) {
+          const total = (m.input_tokens || 0) + (m.output_tokens || 0);
+          if (total > 0) {
+            modelMap.set(m.model, (modelMap.get(m.model) || 0) + total);
+          }
+        }
+        for (const [model, tokens] of modelMap) {
+          byModel.push({ model, tokens });
+        }
+        byModel.sort((a, b) => b.tokens - a.tokens);
+        setTokenData({ total: res.data.total.total_tokens, byModel, loaded: true });
+      } else {
+        setTokenData(prev => ({ ...prev, loaded: true }));
+      }
+    }).catch(() => setTokenData(prev => ({ ...prev, loaded: true })));
+  }, []);
+
   const runningCount = tasks.filter((task) => task.status === 'running').length;
   const completedCount = tasks.filter((task) => task.status === 'completed').length;
   const recentTasks = tasks.slice(0, 8);
@@ -391,15 +421,20 @@ function ResourceTaskOverview({ tasks }: { tasks: TaskItem[] }) {
       <div className="token-metrics">
         <div>
           <span>今日消耗 Token</span>
-          <strong>--</strong>
-          <small>计量源待接入</small>
-        </div>
-        <div>
-          <span>今日节省 Token</span>
-          <strong>--</strong>
-          <small>本地模型节省待统计</small>
+          <strong>{tokenData.loaded ? formatNum(tokenData.total) : '…'}</strong>
+          <small>{tokenData.loaded ? '' : '加载中'}</small>
         </div>
       </div>
+      {tokenData.loaded && tokenData.byModel.length > 0 && (
+        <div className="token-model-list">
+          {tokenData.byModel.map(m => (
+            <div key={m.model} className="token-model-row">
+              <span className="token-model-name">{m.model}</span>
+              <span className="token-model-val">{formatNum(m.tokens)}</span>
+            </div>
+          ))}
+        </div>
+      )}
       <div className="office-task-stats">
         <div><span>进行中</span><strong>{runningCount}</strong></div>
         <div><span>已完成</span><strong>{completedCount}</strong></div>
@@ -449,9 +484,76 @@ function ChannelHealthCard({ channels }: { channels: ChannelHealth[] }) {
   );
 }
 
-function OfficePage({ agents, tasks, channels, selectedId, setSelectedId, onSelectAgent, pending, backendOffline, installPrompt, installed, onInstall, loading }: { agents: AgentInfo[]; tasks: TaskItem[]; channels: ChannelHealth[]; selectedId: string; setSelectedId: (id: string) => void; onSelectAgent: (agentId: string) => void; pending: number; backendOffline: boolean; installPrompt: BeforeInstallPromptEvent | null; installed: boolean; onInstall: () => void; loading: boolean }) {
+function HomeTaskFocus({ tasks, onOpenTasks }: { tasks: TaskItem[]; onOpenTasks: () => void }) {
+  const priorityTasks = tasks.filter((task) => task.status === 'blocked' || task.status === 'running').slice(0, 6);
+  return (
+    <div className="home-focus-card">
+      <div className="section-heading">
+        <div><p className="section-kicker">Today</p><h2>今日待处理</h2></div>
+        <button className="section-action" type="button" onClick={onOpenTasks}>查看任务</button>
+      </div>
+      {priorityTasks.length > 0 ? (
+        <div className="home-task-list">
+          {priorityTasks.map((task) => {
+            const meta = taskStatusMeta[task.status];
+            return (
+              <button className="home-task-row" type="button" key={task.id} onClick={onOpenTasks}>
+                <span className={`task-check ${task.status}`}><OfficeIcon name={meta.icon} size={15} /></span>
+                <span className="home-task-copy">
+                  <strong>{task.title}</strong>
+                  <small>{task.status === 'blocked' ? '等待处理' : '正在执行'} · {task.agent_id ? formatAgentName(task.agent_id) : '未指定'}</small>
+                </span>
+                <OfficeIcon name="chevron" size={16} />
+              </button>
+            );
+          })}
+        </div>
+      ) : (
+        <div className="home-focus-empty" role="status">
+          <OfficeIcon name="check" size={17} />
+          <span>当前没有阻塞或运行中的任务。</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function QuickDispatchCard({ agents, onSelectAgent }: { agents: AgentInfo[]; onSelectAgent: (agentId: string) => void }) {
+  return (
+    <div className="quick-dispatch-card">
+      <div className="section-heading">
+        <div><p className="section-kicker">Quick Dispatch</p><h2>快速派活</h2></div>
+        <span>选择员工后输入任务</span>
+      </div>
+      {agents.length > 0 ? (
+        <div className="quick-dispatch-list">
+          {agents.map((agent) => {
+            const meta = roleMap[agent.id] ?? fallbackRole;
+            return (
+              <button className="quick-dispatch-button" type="button" key={agent.id} onClick={() => onSelectAgent(agent.id)} aria-label={`给${agent.name}派活`}>
+                <AgentPortrait tone={meta.tone} avatar={meta.avatar} name={agent.name} />
+                <span><strong>给{agent.name}派活</strong><small>{meta.role}</small></span>
+                <OfficeIcon name="chevron" size={16} />
+              </button>
+            );
+          })}
+        </div>
+      ) : (
+        <div className="home-focus-empty" role="status">
+          <OfficeIcon name="agent" size={17} />
+          <span>员工状态未知，连接恢复后才能派活。</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function OfficePage({ agents, tasks, selectedId, onSelectAgent, onOpenTasks, backendOffline, loading }: { agents: AgentInfo[]; tasks: TaskItem[]; selectedId: string; onSelectAgent: (agentId: string) => void; onOpenTasks: () => void; backendOffline: boolean; loading: boolean }) {
   const online = agents.filter((agent) => agent.status === 'online').length;
   const offline = Math.max(agents.length - online, 0);
+  const hasAgentStatus = agents.length > 0;
+  const blocked = tasks.filter((task) => task.status === 'blocked').length;
+  const running = tasks.filter((task) => task.status === 'running').length;
   return (
     <section className="page-section">
       <div className="office-overview">
@@ -464,19 +566,18 @@ function OfficePage({ agents, tasks, channels, selectedId, setSelectedId, onSele
         </div>
         <p className="overview-copy">集中查看智能员工状态、职责与待处理任务。</p>
         <div className="status-overview">
-          <div><span className="metric-dot online" /><strong>{online}</strong><small>在线</small></div>
-          <div><span className="metric-dot offline" /><strong>{offline}</strong><small>离线</small></div>
-          <div><span className="metric-dot pending" /><strong>{pending}</strong><small>待补投</small></div>
+          <div><span className="metric-dot online" /><strong>{hasAgentStatus ? online : '—'}</strong><small>在线员工</small></div>
+          <div><span className="metric-dot offline" /><strong>{hasAgentStatus ? offline : '—'}</strong><small>离线员工</small></div>
+          <div><span className="metric-dot pending" /><strong>{blocked + running}</strong><small>待处理任务</small></div>
         </div>
       </div>
       <VirtualOfficeCard onSelectAgent={onSelectAgent} />
-      <ResourceTaskOverview tasks={tasks} />
-      <ChannelHealthCard channels={channels} />
-      <MobileAccessCard installPrompt={installPrompt} installed={installed} onInstall={onInstall} />
+      <HomeTaskFocus tasks={tasks} onOpenTasks={onOpenTasks} />
+      <QuickDispatchCard agents={agents} onSelectAgent={onSelectAgent} />
       <div className="section-heading">
         <div>
           <p className="section-kicker">Office Floor</p>
-          <h2>员工工位</h2>
+          <h2>智能员工</h2>
         </div>
         <span>{agents.length} 位员工</span>
       </div>
@@ -487,7 +588,7 @@ function OfficePage({ agents, tasks, channels, selectedId, setSelectedId, onSele
             <span>{backendOffline ? '后端离线且暂无缓存数据，其他页面仍可继续浏览。' : '暂无员工数据。'}</span>
           </div>
         ) : agents.map((agent) => (
-          <AgentCard key={agent.id} agent={agent} active={agent.id === selectedId} onClick={() => setSelectedId(agent.id)} />
+          <AgentCard key={agent.id} agent={agent} active={agent.id === selectedId} onClick={() => onSelectAgent(agent.id)} />
         ))}
       </div>
     </section>
@@ -1080,16 +1181,19 @@ function WorkspacePage({ tasks, onDispatch, onExpertSubmit }: { tasks: TaskItem[
     if (pipelineMode === 'serial') {
       setPipelineSubmitting(true);
       try {
-        const result = await runExpertPipeline(
+        const initialResult = await runExpertPipeline(
           selectedWorkspace.name,
           selectedWorkspace.goal,
           trimmedQuestion,
           selectedWorkspace.memberIds,
           'serial'
         );
-        // 实时更新步骤状态（后端同步返回已完成的结果）
-        setPipelineSteps(result.steps);
-        setPipelineResult(result);
+        setPipelineSteps(initialResult.steps);
+        setPipelineResult(initialResult);
+        const result = await waitForExpertPipeline(initialResult.batch_id, (nextResult) => {
+          setPipelineSteps(nextResult.steps);
+          setPipelineResult(nextResult);
+        });
 
         // 记录日志
         const createdAt = new Date().toISOString();
@@ -1108,10 +1212,16 @@ function WorkspacePage({ tasks, onDispatch, onExpertSubmit }: { tasks: TaskItem[
         );
         setActivityRefresh((current) => current + 1);
         setQuestion('');
+      } catch (error) {
+        setPipelineResult((current) => current ? {
+          ...current,
+          status: 'failed',
+          synthesize_error: error instanceof Error ? error.message : '专家流水线失败',
+        } : current);
       } finally {
         setPipelineSubmitting(false);
+        setSubmitting(false);
       }
-      setSubmitting(false);
       return;
     }
 
@@ -1294,6 +1404,19 @@ function WorkspacePage({ tasks, onDispatch, onExpertSubmit }: { tasks: TaskItem[
             </div>
 
             <textarea value={question} onChange={(event) => setQuestion(event.target.value)} placeholder={`向“${selectedWorkspace.name}”成员提问`} aria-label="空间内专家团问题" />
+
+            {pipelineMode === 'serial' && pipelineSubmitting ? (
+              <div className="pipeline-job-status" role="status">
+                <OfficeIcon name="clock" size={15} />
+                <span>后台流水线已提交，正在等待专家回执{pipelineResult?.batch_id ? ` · ${pipelineResult.batch_id}` : ''}</span>
+              </div>
+            ) : null}
+            {pipelineMode === 'serial' && pipelineResult?.status === 'failed' && pipelineResult.synthesize_error ? (
+              <div className="pipeline-job-status error" role="alert">
+                <OfficeIcon name="alert" size={15} />
+                <span>专家流水线失败：{pipelineResult.synthesize_error}</span>
+              </div>
+            ) : null}
 
             {/* 串行模式进度条 */}
             {pipelineMode === 'serial' && pipelineSteps.length > 0 && (
@@ -1891,6 +2014,7 @@ export default function App() {
         const summary = '已尝试 ' + result.attempted + ' 条，成功 ' + result.delivered + ' 条，剩余 ' + result.remaining + ' 条';
         const failureCopy = failure ? ' · ' + formatIssueReason(failure) + ' · ' + formatTechnicalMeta(['原始原因 ' + failure]) : '';
         const staleCopy = skippedStale ? ' · 已跳过 ' + skippedStale + ' 条超过 48 小时的旧消息' : '';
+        setRetryStatus(`${summary}${failureCopy}${staleCopy}`);
       }
       if (mode === 'auto') {
         setAutoRetryReport({
@@ -1939,6 +2063,7 @@ export default function App() {
       setAutoRetryReport((current) => ({ ...current, completed: false, error: 'stale_outbox_requires_confirmation' }));
       return;
     }
+    setAutoRetryEnabled(true);
     setAutoRetryReport((current) => ({ ...current, completed: false, error: '' }));
   }
 
@@ -2058,7 +2183,7 @@ export default function App() {
       </header>
       {authError ? <div className="auth-banner" role="alert"><OfficeIcon name="alert" size={17} /><span><strong>登录状态异常。</strong> {authError}</span></div> : null}
       <OfflineBanner show={offline && !authError} />
-      {tab === 'office' && <OfficePage agents={agents} tasks={tasks} channels={channels} selectedId={selectedId} setSelectedId={setSelectedId} onSelectAgent={handleSelectAgentFromOffice} pending={outbox.count} backendOffline={offline} installPrompt={installPrompt} installed={installed} onInstall={handleInstall} loading={loading} />}
+      {tab === 'office' && <OfficePage agents={agents} tasks={tasks} selectedId={selectedId} onSelectAgent={handleSelectAgentFromOffice} onOpenTasks={() => handleTabChange('activity')} backendOffline={offline} loading={loading} />}
       {tab === 'workspace' && <WorkspacePage tasks={tasks} onDispatch={handleWorkspaceDispatch} onExpertSubmit={handleWorkspaceExpertSubmit} />}
       {tab === 'agent' && <AgentPage agents={agents} selectedId={selectedId} onSelectAgent={handleSelectAgent} agent={selectedAgent} tasks={tasks} evolution={evolution} cameFromOffice={cameFromOffice} onBack={() => { setTab('office'); setCameFromOffice(false); const url = new URL(window.location.href); url.searchParams.delete('view'); url.searchParams.delete('id'); window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`); }} loading={loading} />}
       {tab === 'topics' && (
@@ -2083,7 +2208,14 @@ export default function App() {
       {tab === 'activity' && <ActivityPage tasks={tasks} outbox={outbox} onExpertPanelSubmit={handleExpertPanelSubmit} onRetryOutbox={handleRetryOutbox} retryStatus={retryStatus} retrying={retrying} autoRetryEnabled={autoRetryEnabled} autoRetryReport={autoRetryReport} onToggleAutoRetry={handleToggleAutoRetry} onSelectAgent={handleSelectAgent} />}
       <nav className="tabbar" aria-label="主导航">
         {tabs.map(({ key, label, icon }) => (
-          <button key={key} className={tab === key ? 'selected' : ''} onClick={() => handleTabChange(key)}>
+          <button
+            key={key}
+            className={tab === key ? 'selected' : ''}
+            type="button"
+            aria-label={label}
+            aria-current={tab === key ? 'page' : undefined}
+            onClick={() => handleTabChange(key)}
+          >
             <OfficeIcon name={icon} size={21} />
             <span>{label}</span>
           </button>

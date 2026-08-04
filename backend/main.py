@@ -5,10 +5,12 @@ import sqlite3
 import re
 import socket
 import subprocess
+import threading
 import urllib.error
 import urllib.request
 import uuid
 from collections import Counter
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Iterable
@@ -35,6 +37,9 @@ BFF_PORT = 8787
 MESSAGE_TIMEOUT_SECONDS = 45
 OUTBOX_STALE_AFTER_HOURS = 48
 DOJO_METRICS = HERMES_HOME / "skills/dojo/data/metrics.json"
+PIPELINE_EXECUTOR = ThreadPoolExecutor(max_workers=2, thread_name_prefix="expert-pipeline")
+PIPELINE_JOBS: dict[str, dict[str, Any]] = {}
+PIPELINE_JOBS_LOCK = threading.Lock()
 
 CAPABILITY_GROUPS = (
     {"name": "工具调用", "keywords": ["api", "cli", "tool", "browser", "search", "shell", "mcp"]},
@@ -793,6 +798,74 @@ def health() -> dict[str, Any]:
     }
 
 
+@app.get("/api/token-usage")
+def token_usage() -> dict[str, Any]:
+    """今日 Token 消耗与节省统计，数据来自 Hermes state.db session_model_usage 表。"""
+    import datetime, sqlite3
+    today = datetime.date.today()
+    today_start = datetime.datetime.combine(today, datetime.time.min).timestamp()
+    today_end = datetime.datetime.combine(today, datetime.time.max).timestamp()
+
+    db_path = HERMES_HOME / "state.db"
+    if not db_path.is_file():
+        return {"ok": True, "available": False, "message": "state.db 不可用"}
+
+    try:
+        conn = sqlite3.connect(str(db_path))
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT model, billing_provider,
+                   SUM(input_tokens), SUM(output_tokens),
+                   SUM(cache_read_tokens), SUM(cache_write_tokens),
+                   SUM(api_call_count), MAX(last_seen)
+            FROM session_model_usage
+            WHERE last_seen >= ?
+            GROUP BY model, billing_provider
+            ORDER BY SUM(input_tokens + output_tokens) DESC
+        """, (today_start,))
+        rows = cur.fetchall()
+        conn.close()
+    except Exception as exc:
+        return {"ok": True, "available": False, "message": str(exc)}
+
+    total_in = total_out = total_cache_read = total_calls = 0
+    by_model = []
+    for model, prov, inp, outp, cr, cw, calls, last in rows:
+        inp = inp or 0
+        outp = outp or 0
+        cr = cr or 0
+        cw = cw or 0
+        calls = calls or 0
+        total_in += inp
+        total_out += outp
+        total_cache_read += cr
+        total_calls += calls
+        by_model.append({
+            "model": model,
+            "provider": prov,
+            "input_tokens": inp,
+            "output_tokens": outp,
+            "cache_read_tokens": cr,
+            "api_calls": calls,
+            "last_seen": datetime.datetime.fromtimestamp(last).isoformat() if last else None,
+        })
+
+    return {
+        "ok": True,
+        "available": True,
+        "date": today.isoformat(),
+        "total": {
+            "input_tokens": total_in,
+            "output_tokens": total_out,
+            "cache_read_tokens": total_cache_read,
+            "total_tokens": total_in + total_out,
+            "saved_tokens": total_cache_read,
+            "api_calls": total_calls,
+        },
+        "by_model": by_model,
+    }
+
+
 @app.get("/api/agents")
 def agents() -> dict[str, Any]:
     items: list[dict[str, Any]] = []
@@ -1164,6 +1237,27 @@ def tasks() -> dict[str, Any]:
             "time": task_time_value(job.get("last_run_at") or job.get("next_run_at")),
             "detail": f"计划 {schedule} · 最近状态 {last_status}",
             "fallback_reason": None,
+        })
+
+    # Kanban tasks
+    for item in list_kanban_tasks(include_archived=False, limit=20).get("items", []):
+        items.append({
+            "id": item["id"],
+            "title": item["title"],
+            "agent_id": item.get("agent_id"),
+            "status": item["status"],
+            "source": "kanban",
+            "time": item.get("time"),
+            "detail": item.get("detail"),
+            "fallback_reason": item.get("fallback_reason"),
+            "kanban_status": item.get("kanban_status"),
+            "kanban_id": item.get("kanban_id"),
+            "priority": item.get("priority"),
+            "block_kind": item.get("block_kind"),
+            "latest_comment": item.get("latest_comment"),
+            "heartbeat_at": item.get("heartbeat_at"),
+            "session_id": item.get("session_id"),
+            "action_url": item.get("action_url"),
         })
 
     for record in read_outbox_records():
@@ -1973,8 +2067,7 @@ def _send_to_hermes(agent_id: str, message: str, batch_id: str) -> dict[str, Any
         return {"ok": False, "delivered": False, "error": str(exc)}
 
 
-@app.post("/api/experts/pipeline")
-async def run_expert_pipeline(req: PipelineRequest):
+def _execute_expert_pipeline(req: PipelineRequest, batch_id: str) -> dict[str, Any]:
     """
     深度分析串行流水线：
     1. 小黑(CEO) 先回答 → 获取回复
@@ -1982,9 +2075,6 @@ async def run_expert_pipeline(req: PipelineRequest):
     3. 叠加上下文 → 小金(CS) 回答 → 获取回复
     4. LLM 综合所有回复生成最终报告
     """
-    import asyncio
-
-    batch_id = f"pipeline-{datetime.now().strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:6]}"
     steps: list[dict[str, Any]] = []
     context_so_far: dict[str, str] = {}
 
@@ -2088,8 +2178,6 @@ async def run_expert_pipeline(req: PipelineRequest):
     if context_so_far:
         try:
             llm_base_url, llm_model, api_key = _get_llm_config()
-            loop = asyncio.get_running_loop()
-
             synthesize_prompt = (
                 "你是一个专业的商业分析报告撰写助手。请根据以下三位专家的分析，"
                 "撰写一份结构化的深度分析报告。\n\n"
@@ -2100,15 +2188,12 @@ async def run_expert_pipeline(req: PipelineRequest):
                 "1. 执行摘要\n2. 各维度分析（整合 CEO/PM/CS 视角）\n3. 综合结论与建议"
             )
 
-            final_report = await loop.run_in_executor(
-                None,
-                lambda: _sync_llm_call(
-                    f"{llm_base_url}/v1/chat/completions",
-                    api_key,
-                    llm_model,
-                    synthesize_prompt,
-                    max_tokens=800
-                )
+            final_report = _sync_llm_call(
+                f"{llm_base_url}/v1/chat/completions",
+                api_key,
+                llm_model,
+                synthesize_prompt,
+                max_tokens=800,
             )
         except Exception as exc:
             synthesize_error = str(exc)
@@ -2129,3 +2214,61 @@ async def run_expert_pipeline(req: PipelineRequest):
         "pipeline_type": req.pipeline_type,
         "workspace_name": req.workspace_name,
     }
+
+
+def _update_pipeline_job(batch_id: str, **updates: Any) -> None:
+    with PIPELINE_JOBS_LOCK:
+        job = PIPELINE_JOBS.get(batch_id)
+        if job is not None:
+            job.update(updates)
+
+
+def _run_pipeline_job(req: PipelineRequest, batch_id: str) -> None:
+    _update_pipeline_job(batch_id, status="running")
+    try:
+        result = _execute_expert_pipeline(req, batch_id)
+    except Exception as exc:
+        _update_pipeline_job(
+            batch_id,
+            status="failed",
+            final_report="",
+            synthesize_error=f"{type(exc).__name__}: {exc}",
+        )
+        return
+    _update_pipeline_job(batch_id, status="completed", **result)
+
+
+@app.post("/api/experts/pipeline")
+async def run_expert_pipeline(req: PipelineRequest):
+    batch_id = f"pipeline-{datetime.now().strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:6]}"
+    role_order = ["default", "media-ops", "investor"]
+    steps = [
+        {"agent_id": agent_id, "status": "pending" if agent_id in req.member_ids else "skipped", **(
+            {} if agent_id in req.member_ids else {"reason": "未在成员列表中"}
+        )}
+        for agent_id in role_order
+    ]
+    job = {
+        "ok": True,
+        "status": "queued",
+        "batch_id": batch_id,
+        "steps": steps,
+        "context_collected": {},
+        "final_report": "",
+        "synthesize_error": None,
+        "pipeline_type": req.pipeline_type,
+        "workspace_name": req.workspace_name,
+    }
+    with PIPELINE_JOBS_LOCK:
+        PIPELINE_JOBS[batch_id] = job
+    PIPELINE_EXECUTOR.submit(_run_pipeline_job, req.model_copy(deep=True), batch_id)
+    return job
+
+
+@app.get("/api/experts/pipeline/{batch_id}")
+async def get_expert_pipeline(batch_id: str):
+    with PIPELINE_JOBS_LOCK:
+        job = PIPELINE_JOBS.get(batch_id)
+        if job is None:
+            return JSONResponse(status_code=404, content={"ok": False, "error": "pipeline_not_found"})
+        return dict(job)
