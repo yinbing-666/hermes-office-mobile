@@ -1010,20 +1010,21 @@ function formatTokens(value: number): string {
 function CostPage({ usageTrend, tokenUsage, resourceState, onRetry }: { usageTrend: UsageTrendData; tokenUsage: TokenUsageData; resourceState: ResourceState; onRetry: () => void }) {
   const days = (usageTrend.days ?? []).map((day) => ({
     ...day,
-    totalTokens: (day.input_tokens ?? 0) + (day.output_tokens ?? 0),
+    totalTokens: (day.input_tokens ?? 0) + (day.output_tokens ?? 0) + (day.cache_read_tokens ?? 0),
   }));
   const maxDailyTokens = Math.max(...days.map((day) => day.totalTokens), 1);
   const totalCalls = usageTrend.total_calls ?? 0;
   const todayInputTokens = tokenUsage.total?.input_tokens ?? 0;
   const todayOutputTokens = tokenUsage.total?.output_tokens ?? 0;
-  const todayTotalTokens = tokenUsage.total?.total_tokens ?? (todayInputTokens + todayOutputTokens);
+  const todayCacheTokens = tokenUsage.total?.cache_read_tokens ?? 0;
+  const todayTotalTokens = (todayInputTokens + todayOutputTokens + todayCacheTokens) || (tokenUsage.total?.total_tokens ?? 0);
   const byModel = (tokenUsage.by_model ?? [])
     .map((item) => ({
       ...item,
-      totalTokens: (item.input_tokens ?? 0) + (item.output_tokens ?? 0),
+      totalTokens: (item.input_tokens ?? 0) + (item.output_tokens ?? 0) + (item.cache_read_tokens ?? 0),
     }))
     .sort((left, right) => right.totalTokens - left.totalTokens);
-  const modelTokenTotal = Math.max(todayTotalTokens, 1);
+  const modelTokenTotal = Math.max(todayInputTokens + todayOutputTokens + todayCacheTokens, 1);
 
   if (resourceState.status !== 'success') {
     return <section className="page-section cost-page"><ResourceStateCard state={resourceState} onRetry={onRetry} label="成本统计" /></section>;
@@ -1038,14 +1039,14 @@ function CostPage({ usageTrend, tokenUsage, resourceState, onRetry }: { usageTre
         </div>
         <p>Token 消耗与节省统计，数据来自 Hermes state.db 真实记录 · 近 14 天 {totalCalls} 次调用。</p>
         <div className="growth-summary">
-          <div><strong>{formatTokens(todayTotalTokens)}</strong><span>今日总 Token</span></div>
+          <div><strong>{formatTokens(todayTotalTokens)}</strong><span>今日总消耗</span></div>
           <div><strong>{formatTokens(todayInputTokens)}</strong><span>今日输入</span></div>
           <div><strong>{formatTokens(todayOutputTokens)}</strong><span>今日输出</span></div>
-          <div><strong>{formatTokens(tokenUsage.total?.cache_read_tokens ?? 0)}</strong><span>今日缓存命中</span></div>
+          <div><strong>{formatTokens(todayCacheTokens)}</strong><span>今日缓存命中</span></div>
         </div>
       </div>
 
-      <div className="section-heading"><div><p className="section-kicker">Usage Trend</p><h2>近 14 天 Token 趋势</h2></div><span>输入 + 输出</span></div>
+      <div className="section-heading"><div><p className="section-kicker">Usage Trend</p><h2>近 14 天 Token 趋势</h2></div><span>含缓存命中</span></div>
       <div className="archive-card trend-card">
         {days.length === 0 ? <p className="archive-empty">暂无用量记录。</p> : (
           <div className="trend-chart" aria-label="近十四天 Token 用量趋势">
