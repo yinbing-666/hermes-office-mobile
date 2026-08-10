@@ -12,6 +12,7 @@ DRAGON_BASE_URL: str = os.environ.get("DRAGON_BASE_URL", "https://newapi.dragon3
 DRAGON_MODEL: str = os.environ.get("DRAGON_MODEL", "gpt-5.6-sol")
 import socket
 import subprocess
+import sys
 import threading
 import urllib.error
 import urllib.request
@@ -909,7 +910,31 @@ def token_usage() -> dict[str, Any]:
         logger.exception("Token 可用性检查失败")
         return {"ok": True, "available": False, "message": "内部错误，请稍后重试"}
 
-    total_in = total_out = total_cache_read = total_calls = 0
+    # 成本估算：复用 token-tracker 的 litellm 定价（与 Codex 区块同源）
+    try:
+        sys.path.insert(0, "/home/agentuser/.local/share/uv/tools/token-tracker/lib/python3.14/site-packages")
+        from token_tracker.analyzer.cost import calculate_cost
+        from token_tracker.adapters.types import UsageEntry
+        from datetime import datetime as _dt, timezone as _tz
+        _cost_ok = True
+    except Exception:
+        _cost_ok = False
+
+    def _estimate_cost(model: str, inp: int, outp: int, cache_r: int) -> float:
+        if not _cost_ok:
+            return 0.0
+        try:
+            entry = UsageEntry(
+                timestamp=_dt.now(_tz.utc), session_id="", message_id="", request_id="",
+                model=model, input_tokens=inp, output_tokens=outp,
+                cache_creation_tokens=0, cache_read_tokens=cache_r,
+                cost_usd=None, project="", agent_id="hermes",
+            )
+            return calculate_cost(entry)
+        except Exception:
+            return 0.0
+
+    total_in = total_out = total_cache_read = total_calls = total_cost = 0
     by_model = []
     for model, prov, inp, outp, cr, cw, calls, last in rows:
         inp = inp or 0
@@ -917,10 +942,12 @@ def token_usage() -> dict[str, Any]:
         cr = cr or 0
         cw = cw or 0
         calls = calls or 0
+        cost = _estimate_cost(model, inp, outp, cr)
         total_in += inp
         total_out += outp
         total_cache_read += cr
         total_calls += calls
+        total_cost += cost
         by_model.append({
             "model": model,
             "provider": prov,
@@ -928,6 +955,7 @@ def token_usage() -> dict[str, Any]:
             "output_tokens": outp,
             "cache_read_tokens": cr,
             "api_calls": calls,
+            "cost_usd": round(cost, 4),
             "last_seen": datetime.datetime.fromtimestamp(last).isoformat() if last else None,
         })
 
@@ -935,6 +963,7 @@ def token_usage() -> dict[str, Any]:
         "ok": True,
         "available": True,
         "date": today.isoformat(),
+        "cost_estimates": _cost_ok,
         "total": {
             "input_tokens": total_in,
             "output_tokens": total_out,
@@ -942,6 +971,7 @@ def token_usage() -> dict[str, Any]:
             "total_tokens": total_in + total_out,
             "saved_tokens": total_cache_read,
             "api_calls": total_calls,
+            "cost_usd": round(total_cost, 4),
         },
         "by_model": by_model,
     }

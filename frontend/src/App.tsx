@@ -1044,8 +1044,9 @@ function CostPage({ usageTrend, tokenUsage, codexUsage, resourceState, onRetry }
           <div><strong>{formatTokens(todayTotalTokens)}</strong><span>今日总消耗</span></div>
           <div><strong>{formatTokens(todayInputTokens)}</strong><span>今日输入</span></div>
           <div><strong>{formatTokens(todayOutputTokens)}</strong><span>今日输出</span></div>
-          <div><strong>{formatTokens(todayCacheTokens)}</strong><span>今日缓存命中</span></div>
+          <div><strong>${(tokenUsage.total?.cost_usd ?? 0).toFixed(2)}</strong><span>今日成本估算</span></div>
         </div>
+        <p className="cost-page-subnote">缓存命中 {formatTokens(todayCacheTokens)}（已计入总消耗）· 价格按 litellm 官方定价估算</p>
       </div>
 
       <div className="section-heading"><div><p className="section-kicker">Usage Trend</p><h2>近 14 天 Token 趋势</h2></div><span>含缓存命中</span></div>

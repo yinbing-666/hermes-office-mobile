@@ -234,6 +234,7 @@ export type TokenUsageData = {
   ok: boolean;
   available: boolean;
   date: string;
+  cost_estimates?: boolean;
   total: {
     input_tokens: number;
     output_tokens: number;
@@ -241,6 +242,7 @@ export type TokenUsageData = {
     total_tokens: number;
     saved_tokens: number;
     api_calls: number;
+    cost_usd?: number;
   };
   by_model: Array<{
     model: string;
@@ -249,6 +251,7 @@ export type TokenUsageData = {
     output_tokens: number;
     cache_read_tokens: number;
     api_calls: number;
+    cost_usd?: number;
     last_seen: string | null;
   }>;
 };
@@ -258,7 +261,7 @@ export async function fetchTokenUsage() {
     ok: true,
     available: false,
     date: '',
-    total: { input_tokens: 0, output_tokens: 0, cache_read_tokens: 0, total_tokens: 0, saved_tokens: 0, api_calls: 0 },
+    total: { input_tokens: 0, output_tokens: 0, cache_read_tokens: 0, total_tokens: 0, saved_tokens: 0, api_calls: 0, cost_usd: 0 },
     by_model: [],
   });
 }
