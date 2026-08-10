@@ -1,4 +1,4 @@
-const CACHE_NAME = 'hermes-office-mobile-v2';
+const CACHE_NAME = 'hermes-office-mobile-v3';
 const APP_SHELL = [
   '/',
   '/index.html',
@@ -7,9 +7,9 @@ const APP_SHELL = [
   '/icons/icon-192.png',
   '/icons/icon-512.png',
   '/icons/icon-maskable-512.png',
-  '/avatars/default.png',
-  '/avatars/media-ops.png',
-  '/avatars/investor.png',
+  '/avatars/default.webp?v=2',
+  '/avatars/media-ops.webp?v=2',
+  '/avatars/investor.webp?v=2',
 ];
 
 self.addEventListener('install', (event) => {
