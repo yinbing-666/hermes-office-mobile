@@ -88,6 +88,7 @@ const roleMap: Record<string, RoleMeta> = {
 
 const tabs: Array<{ key: Tab; label: string; icon: OfficeIconName }> = [
   { key: 'office', label: '办公室', icon: 'office' },
+  { key: 'agent', label: '员工', icon: 'agent' },
   { key: 'evolution', label: '进化', icon: 'growth' },
   { key: 'knowledge', label: '知识库', icon: 'search' },
   { key: 'cost', label: '成本', icon: 'activity' },

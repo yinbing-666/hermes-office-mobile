@@ -32,6 +32,7 @@ button { border: 0; cursor: pointer; }
 .app-shell {
   width: min(100%, 480px);
   min-height: 100vh;
+  min-height: 100dvh;
   margin: 0 auto;
   padding: 18px 16px calc(118px + env(safe-area-inset-bottom));
   position: relative;
@@ -837,12 +838,13 @@ input:focus { border-color: #8fb8df; box-shadow: 0 0 0 3px rgba(77, 143, 216, .0
 .recent-event-list div:last-child { border-bottom: 0; }
 .recent-event-list p { margin: 10px 0 0; font-size: 11px; }
 
-.tabbar { position: fixed; left: 50%; bottom: max(10px, env(safe-area-inset-bottom)); transform: translateX(-50%); width: min(calc(100vw - 16px), 464px); display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); padding: 4px; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 2px 8px rgba(32, 37, 43, .06); }
-.tabbar button { min-width: 0; display: grid; place-items: center; gap: 2px; padding: 6px 0 5px; color: #818891; background: transparent; border-radius: 8px; font-size: 8px; font-weight: 500; }
-.tabbar button .office-icon { width: 18px; height: 18px; }
-.tabbar button.selected { color: #3474ad; background: var(--surface-blue); }
-.tabbar button span { line-height: 1; white-space: nowrap; }
-.tabbar button:focus-visible { outline: 2px solid #8fb8df; outline-offset: 2px; }
+.tabbar { position: fixed; z-index: 1000; left: 50%; bottom: max(10px, env(safe-area-inset-bottom)); transform: translateX(-50%); width: min(calc(100vw - 16px), 464px); display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 2px; padding: 4px; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; box-shadow: 0 2px 8px rgba(32, 37, 43, .06); }
+.tabbar button { appearance: none; -webkit-appearance: none; min-width: 0; min-height: 48px; box-sizing: border-box; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; margin: 0; padding: 4px 2px; color: #747c86; background: transparent; border: 0; border-radius: 10px; font-size: 11px; font-weight: 500; line-height: 1.1; cursor: pointer; touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
+.tabbar button:active { transform: scale(0.97); }
+.tabbar button .office-icon { width: 20px; height: 20px; flex: 0 0 auto; }
+.tabbar button.selected { color: #286da8; background: var(--surface-blue); font-weight: 600; }
+.tabbar button span { display: block; max-width: 100%; overflow: hidden; line-height: 1.1; white-space: nowrap; text-overflow: ellipsis; }
+.tabbar button:focus-visible { outline: 2px solid #8fb8df; outline-offset: -2px; }
 
 @media (max-width: 480px) {
   .zone-callout { display: none; }
