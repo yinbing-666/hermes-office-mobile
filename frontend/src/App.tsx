@@ -91,9 +91,9 @@ const roleMap: Record<string, RoleMeta> = {
 const tabs: Array<{ key: Tab; label: string; icon: OfficeIconName }> = [
   { key: 'office', label: '办公室', icon: 'office' },
   { key: 'agent', label: '员工', icon: 'agent' },
-  { key: 'evolution', label: '进化', icon: 'growth' },
-  { key: 'knowledge', label: '知识库', icon: 'search' },
-  { key: 'cost', label: '成本', icon: 'activity' },
+  { key: 'evolution', label: '进化', icon: 'evolution' },
+  { key: 'knowledge', label: '知识库', icon: 'knowledge' },
+  { key: 'cost', label: '成本', icon: 'cost' },
 ];
 
 const growthTypeLabels: Record<string, { label: string; icon: OfficeIconName }> = {
@@ -290,21 +290,25 @@ function AgentCard({ agent, active, onClick }: { agent: AgentInfo; active: boole
 function VirtualOfficeCard({ onSelectAgent }: { onSelectAgent: (agentId: string) => void }) {
   return (
     <div className="virtual-office-card" aria-label="虚拟办公室空间示意">
-      <div className="virtual-office-heading">
-        <div>
-          <p className="section-kicker">Virtual Workspace</p>
-          <h2>今日办公室</h2>
+      <div className="office-scene-header">
+        <div className="virtual-office-heading">
+          <div>
+            <p className="section-kicker">Virtual Workspace</p>
+            <h2>今日办公室</h2>
+          </div>
+          <span><i />协作空间</span>
         </div>
-        <span><i />协作空间</span>
-      </div>
-      <div className="office-legend" aria-label="办公室分区图例">
-        <span><i className="kitchen" />茶水</span>
-        <span><i className="fitness" />健身</span>
-        <span><i className="workstation" />工位</span>
+        <div className="office-legend" aria-label="办公室分区图例">
+          <span><i className="kitchen" />茶水</span>
+          <span><i className="fitness" />健身</span>
+          <span><i className="workstation" />工位</span>
+        </div>
       </div>
       <div className="office-room">
-        <img className="office-scene-bg" src="/images/office-scene.webp?v=2" alt="" />
-        <div className="office-world" aria-hidden="true" />
+        <div className="office-scene-layer" aria-hidden="true">
+          <img className="office-scene-bg" src="/images/office-scene.webp?v=2" alt="" />
+          <div className="office-world" />
+        </div>
         <div className="office-annotations" aria-label="办公室分区与员工坐席">
           <span className="office-callout zone-callout kitchen-callout">茶水区 / 厨房</span>
           <span className="office-callout zone-callout fitness-callout">健身区 / 跑步机</span>
@@ -461,8 +465,8 @@ function HomeTaskFocus({ tasks, onOpenTasks }: { tasks: TaskItem[]; onOpenTasks:
         </div>
       ) : (
         <div className="home-focus-empty" role="status">
-          <OfficeIcon name="check" size={17} />
-          <span>当前没有阻塞或运行中的任务。</span>
+          <OfficeIcon name="coffee" size={17} />
+          <span>当前没有待处理任务，休息一下。</span>
         </div>
       )}
     </div>
@@ -502,13 +506,14 @@ function QuickDispatchCard({ agents, onSelectAgent }: { agents: AgentInfo[]; onS
 function OfficePage({ agents, tasks, selectedId, onSelectAgent, onOpenTasks, backendOffline, loading, usageTrend, knowledge, costState, knowledgeState }: { agents: AgentInfo[]; tasks: TaskItem[]; selectedId: string; onSelectAgent: (agentId: string) => void; onOpenTasks: () => void; backendOffline: boolean; loading: boolean; usageTrend: UsageTrendData; knowledge: KnowledgeData; costState: ResourceState; knowledgeState: ResourceState }) {
   const online = agents.filter((agent) => agent.status === 'online').length;
   const offline = Math.max(agents.length - online, 0);
-  const hasAgentStatus = agents.length > 0;
   const blocked = tasks.filter((task) => task.status === 'blocked').length;
   const running = tasks.filter((task) => task.status === 'running').length;
   const shanghaiToday = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
-  const todayCalls = costState.status === 'success' ? usageTrend.today?.api_calls ?? '—' : '—';
-  const todayIngest = knowledgeState.status === 'success' ? knowledge.trend?.find((item) => item.date === shanghaiToday)?.files_added ?? '—' : '—';
-  const knowledgeTotal = knowledgeState.status === 'success' ? knowledge.total ?? '—' : '—';
+  const todayCallsLoading = costState.status === 'loading';
+  const todayIngestLoading = knowledgeState.status === 'loading';
+  const todayCalls = todayCallsLoading ? '—' : usageTrend.today?.api_calls ?? 0;
+  const todayIngest = todayIngestLoading ? '—' : knowledge.trend?.find((item) => item.date === shanghaiToday)?.files_added ?? 0;
+  const knowledgeTotal = knowledgeState.status === 'loading' ? '—' : knowledge.total ?? 0;
   return (
     <section className="page-section">
       <div className="office-overview">
@@ -521,14 +526,14 @@ function OfficePage({ agents, tasks, selectedId, onSelectAgent, onOpenTasks, bac
         </div>
         <p className="overview-copy">集中查看智能员工状态、职责与待处理任务。</p>
         <div className="status-overview">
-          <div><span className="metric-dot online" /><strong>{hasAgentStatus ? online : '—'}</strong><small>在线员工</small></div>
-          <div><span className="metric-dot offline" /><strong>{hasAgentStatus ? offline : '—'}</strong><small>离线员工</small></div>
-          <div><span className="metric-dot pending" /><strong>{blocked + running}</strong><small>待处理任务</small></div>
+          <div><span className="metric-dot online" /><strong className={`metric-value${loading ? ' metric-value-loading' : online === 0 ? ' metric-value-zero' : ''}`}>{loading ? '—' : online}</strong><small className="metric-label">在线员工</small></div>
+          <div><span className="metric-dot offline" /><strong className={`metric-value${loading ? ' metric-value-loading' : offline === 0 ? ' metric-value-zero' : ''}`}>{loading ? '—' : offline}</strong><small className="metric-label">离线员工</small></div>
+          <div><span className="metric-dot pending" /><strong className={`metric-value${blocked + running === 0 ? ' metric-value-zero' : ''}`}>{blocked + running}</strong><small className="metric-label">待处理任务</small></div>
         </div>
         <div className="today-overview">
-          <div><strong>{todayCalls}</strong><small>今日 API 调用</small></div>
-          <div><strong>{todayIngest}</strong><small>今日知识入库</small></div>
-          <div><strong>{knowledgeTotal}</strong><small>知识库总量</small></div>
+          <div><strong className={`metric-value metric-value-compact${todayCallsLoading ? ' metric-value-loading' : todayCalls === 0 ? ' metric-value-zero' : ''}`}>{todayCalls}</strong><small className="metric-label">今日 API 调用</small></div>
+          <div><strong className={`metric-value metric-value-compact${todayIngestLoading ? ' metric-value-loading' : todayIngest === 0 ? ' metric-value-zero' : ''}`}>{todayIngest}</strong><small className="metric-label">今日知识入库</small></div>
+          <div><strong className={`metric-value metric-value-compact${knowledgeTotal === '—' ? ' metric-value-loading' : knowledgeTotal === 0 ? ' metric-value-zero' : ''}`}>{knowledgeTotal}</strong><small className="metric-label">知识库总量</small></div>
         </div>
       </div>
       <VirtualOfficeCard onSelectAgent={onSelectAgent} />
@@ -1015,6 +1020,7 @@ function CostPage({ usageTrend, tokenUsage, codexUsage, resourceState, onRetry }
     totalTokens: (day.input_tokens ?? 0) + (day.output_tokens ?? 0) + (day.cache_read_tokens ?? 0),
   }));
   const maxDailyTokens = Math.max(...days.map((day) => day.totalTokens), 1);
+  const minDailyTokens = days.length > 0 ? Math.min(...days.map((day) => day.totalTokens)) : 0;
   const totalCalls = usageTrend.total_calls ?? 0;
   const todayInputTokens = tokenUsage.total?.input_tokens ?? 0;
   const todayOutputTokens = tokenUsage.total?.output_tokens ?? 0;
@@ -1044,47 +1050,60 @@ function CostPage({ usageTrend, tokenUsage, codexUsage, resourceState, onRetry }
           <div><strong>{formatTokens(todayTotalTokens)}</strong><span>今日总消耗</span></div>
           <div><strong>{formatTokens(todayInputTokens)}</strong><span>今日输入</span></div>
           <div><strong>{formatTokens(todayOutputTokens)}</strong><span>今日输出</span></div>
-          <div><strong>${(tokenUsage.total?.cost_usd ?? 0).toFixed(2)}</strong><span>今日成本估算</span></div>
+          <div><strong>${(tokenUsage.total?.cost_usd ?? 0).toFixed(2)}</strong><span>今日成本</span></div>
         </div>
         <p className="cost-page-subnote">缓存命中 {formatTokens(todayCacheTokens)}（已计入总消耗）· 价格按 litellm 官方定价估算</p>
       </div>
 
-      <div className="section-heading"><div><p className="section-kicker">Usage Trend</p><h2>近 14 天 Token 趋势</h2></div><span>含缓存命中</span></div>
+      <div className="section-heading"><div><p className="section-kicker">Usage Trend</p><h2>近 14 天 Token 趋势</h2></div></div>
       <div className="archive-card trend-card">
         {days.length === 0 ? <p className="archive-empty">暂无用量记录。</p> : (
-          <div className="trend-chart" aria-label="近十四天 Token 用量趋势">
-            {days.map((day) => (
-              <div className="trend-column" key={day.date}>
-                <span>{formatTokens(day.totalTokens)}</span>
-                <div className="trend-bar">
-                  <i className="trend-skill" style={{ height: `${(day.totalTokens / maxDailyTokens) * 100}%` }} />
+          <>
+            <div className="trend-chart" aria-label="近十四天 Token 用量趋势">
+              {days.map((day) => (
+                <div className="trend-column" key={day.date}>
+                  <span className={day.totalTokens === maxDailyTokens || day.totalTokens === minDailyTokens ? '' : 'trend-value-hidden'}>{formatTokens(day.totalTokens)}</span>
+                  <div className="trend-bar">
+                    <i className="trend-input" style={{ height: `${(day.input_tokens / maxDailyTokens) * 100}%` }} />
+                    <i className="trend-output" style={{ height: `${(day.output_tokens / maxDailyTokens) * 100}%` }} />
+                    <i className="trend-cache" style={{ height: `${(day.cache_read_tokens / maxDailyTokens) * 100}%` }} />
+                  </div>
+                  <small>{day.date.slice(5)}</small>
                 </div>
-                <small>{day.date.slice(5)}</small>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+            <div className="cost-trend-legend" aria-label="Token 趋势图例">
+              <span><i className="input" />输入</span>
+              <span><i className="output" />输出</span>
+              <span><i className="cache" />缓存</span>
+              <span className="cache-note">含缓存命中</span>
+            </div>
+          </>
         )}
       </div>
 
       <div className="section-heading"><div><p className="section-kicker">By Model</p><h2>今日模型用量</h2></div><span>按模型拆分</span></div>
       <div className="archive-card model-usage-card">
         {byModel.length === 0 ? <p className="archive-empty">暂无模型用量。</p> : (
-          <div className="model-usage-list">
-            {byModel.map((item) => (
-              <div className="model-usage-item" key={`${item.model}-${item.provider}`}>
-                <div className="model-usage-head">
-                  <div>
-                    <strong>{item.model}</strong>
-                    <small>{item.provider ?? 'unknown'} · {item.api_calls ?? 0} 次调用 · 缓存命中 {formatTokens(item.cache_read_tokens ?? 0)}</small>
+          <>
+            <div className="model-usage-list">
+              {byModel.map((item) => (
+                <div className="model-usage-item" key={`${item.model}-${item.provider}`}>
+                  <div className="model-usage-head">
+                    <div>
+                      <strong>{item.model}</strong>
+                      <small>{item.provider ?? 'unknown'} · {item.api_calls ?? 0} 次调用 · 缓存命中 {formatTokens(item.cache_read_tokens ?? 0)}</small>
+                    </div>
+                    <span><strong>{formatTokens(item.totalTokens)}</strong><small>Token</small></span>
                   </div>
-                  <span><strong>{formatTokens(item.totalTokens)}</strong><small>Token</small></span>
+                  <div className="model-usage-bar" aria-label={`${item.model} 占今日 Token ${Math.round((item.totalTokens / modelTokenTotal) * 100)}%`}>
+                    <i style={{ width: `${Math.min((item.totalTokens / modelTokenTotal) * 100, 100)}%` }} />
+                  </div>
                 </div>
-                <div className="model-usage-bar" aria-label={`${item.model} 占今日 Token ${Math.round((item.totalTokens / modelTokenTotal) * 100)}%`}>
-                  <i style={{ width: `${Math.min((item.totalTokens / modelTokenTotal) * 100, 100)}%` }} />
-                </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+            {byModel.length === 1 ? <p className="model-usage-empty-note">暂无其他模型数据</p> : null}
+          </>
         )}
       </div>
 
@@ -1098,7 +1117,7 @@ function CostPage({ usageTrend, tokenUsage, codexUsage, resourceState, onRetry }
               <div><strong>{formatTokens((codexUsage.total.input_tokens ?? 0) + (codexUsage.total.output_tokens ?? 0) + (codexUsage.total.cache_read_tokens ?? 0))}</strong><span>今日总消耗</span></div>
               <div><strong>{formatTokens(codexUsage.total.input_tokens ?? 0)}</strong><span>今日输入</span></div>
               <div><strong>{formatTokens(codexUsage.total.output_tokens ?? 0)}</strong><span>今日输出</span></div>
-              <div><strong>${(codexUsage.total.cost_usd ?? 0).toFixed(2)}</strong><span>今日成本估算</span></div>
+              <div><strong>${(codexUsage.total.cost_usd ?? 0).toFixed(2)}</strong><span>今日成本</span></div>
             </div>
             <div className="codex-usage-note">数据来自 token-tracker 读取 ~/.codex sessions · 今日 {codexUsage.total.api_calls ?? 0} 次调用 · {codexUsage.total.sessions ?? 0} 个会话 · 与 Hermes 网关用量独立计费</div>
             {(codexUsage.by_model ?? []).length > 0 && (
@@ -1377,16 +1396,18 @@ export default function App() {
   return (
     <main className="app-shell">
       <header className="topbar">
-        <div>
-          <span>HERMES OFFICE</span>
-          <strong>{pageTitle}</strong>
+        <div className="topbar-main">
+          <span className="topbar-brand">HERMES OFFICE</span>
+          <div className="topbar-title-row">
+            <strong>{pageTitle}</strong>
+            <div className={`connection-state ${offline ? 'offline' : ''}`} aria-label={offline ? '离线数据' : '已连接'}><span />{offline ? '离线数据' : '已连接'}</div>
+          </div>
         </div>
-        <div className="topbar-status">
+        <div className="topbar-user topbar-status">
           <div className="auth-row">
-            <div className={`auth-state ${authError ? 'error' : session?.auth_enabled ? 'enabled' : 'pending'}`} title={session?.email ?? authError}><span />{authLabel}</div>
+            <div className={`auth-state topbar-user-status ${authError ? 'error' : session?.auth_enabled ? 'enabled' : 'pending'}`} title={session?.email ?? authError}><OfficeIcon name="user" size={14} /><span />{authLabel}</div>
             {session.auth_enabled ? <button className="logout-button" type="button" onClick={() => void handleLogout()}>退出</button> : null}
           </div>
-          <div className={`connection-state ${offline ? 'offline' : ''}`}><span />{offline ? '离线数据' : '已连接'}</div>
         </div>
       </header>
       {authError ? <div className="auth-banner" role="alert"><OfficeIcon name="alert" size={17} /><span><strong>登录状态异常。</strong> {authError}</span></div> : null}
@@ -1406,7 +1427,7 @@ export default function App() {
             aria-current={tab === key ? 'page' : undefined}
             onClick={() => handleTabChange(key)}
           >
-            <OfficeIcon name={icon} size={21} />
+            <OfficeIcon name={icon} size={21} className="tab-icon" />
             <span>{label}</span>
           </button>
         ))}

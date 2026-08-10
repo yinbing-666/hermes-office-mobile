@@ -1,6 +1,8 @@
-export type OfficeIconName = 'office' | 'workspace' | 'agent' | 'growth' | 'activity' | 'workflow' | 'monitor' | 'coffee' | 'file' | 'search' | 'message' | 'database' | 'refresh' | 'check' | 'alert' | 'user' | 'terminal' | 'clock' | 'send' | 'chevron';
+export type OfficeIconName = 'office' | 'workspace' | 'agent' | 'growth' | 'activity' | 'workflow' | 'monitor' | 'coffee' | 'file' | 'search' | 'message' | 'database' | 'refresh' | 'check' | 'alert' | 'user' | 'terminal' | 'clock' | 'send' | 'chevron' | 'evolution' | 'knowledge' | 'cost';
 
-const paths: Record<OfficeIconName, string[]> = {
+type LegacyOfficeIconName = Exclude<OfficeIconName, 'evolution' | 'knowledge' | 'cost'>;
+
+const paths: Record<LegacyOfficeIconName, string[]> = {
   office: ['M8 22V9l8-4 8 4v13', 'M5 22h22', 'M12 22v-7h8v7', 'M11 11h2M19 11h2'],
   workspace: ['M5 10h9l2 3h11v13H5Z', 'M5 10V7h9l2 3', 'M10 18h12M10 22h8'],
   agent: ['M12 7h8a5 5 0 0 1 5 5v5a5 5 0 0 1-5 5h-8a5 5 0 0 1-5-5v-5a5 5 0 0 1 5-5Z', 'M16 7V4', 'M12 14h.01M20 14h.01', 'M13 18h6'],
@@ -23,11 +25,23 @@ const paths: Record<OfficeIconName, string[]> = {
   chevron: ['m13 9 7 7-7 7'],
 };
 
+const tabPaths: Record<'office' | 'agent' | 'evolution' | 'knowledge' | 'cost', string[]> = {
+  office: ['M4 20.5h16', 'M5.5 20.5V5.5h13v15', 'M8.5 9h2M14 9h2M8.5 12.5h2M14 12.5h2', 'M9 20.5v-4h6v4'],
+  agent: ['M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z', 'M4.5 20c.8-3.2 3.3-5 7.5-5s6.7 1.8 7.5 5', 'M7.5 19.5h9'],
+  evolution: ['M3.5 17.5 8.5 12l3.5 3 8.5-8', 'M16.5 7H20v3.5', 'M3.5 20.5h17'],
+  knowledge: ['M4 5.5c2.7-.8 5.3-.3 8 1.3v13c-2.7-1.6-5.3-2.1-8-1.3Z', 'M20 5.5c-2.7-.8-5.3-.3-8 1.3v13c2.7-1.6 5.3-2.1 8-1.3Z', 'M12 6.8v13'],
+  cost: ['M4 20h16', 'M7 20v-5M12 20v-8M17 20v-11', 'M7.5 4.5h4a2.5 2.5 0 1 1 0 5h-4a2.5 2.5 0 1 0 0 5h4', 'M9.5 3v2M9.5 16v2'],
+};
+
+const tabIconNames = new Set<OfficeIconName>(['office', 'agent', 'evolution', 'knowledge', 'cost']);
+
 export function OfficeIcon({ name, size = 22, className = '' }: { name: OfficeIconName; size?: number; className?: string }) {
+  const isTabIcon = tabIconNames.has(name);
+  const iconPaths = isTabIcon ? tabPaths[name as keyof typeof tabPaths] : paths[name as LegacyOfficeIconName];
   return (
-    <svg className={`office-icon ${className}`} width={size} height={size} viewBox="0 0 32 32" fill="none" aria-hidden="true">
-      {paths[name].map((d) => (
-        <path key={d} d={d} stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+    <svg className={`office-icon ${className}`} width={size} height={size} viewBox={isTabIcon ? '0 0 24 24' : '0 0 32 32'} fill="none" aria-hidden="true">
+      {iconPaths.map((d) => (
+        <path key={d} d={d} stroke="currentColor" strokeWidth={isTabIcon ? 1.5 : 1.8} strokeLinecap="round" strokeLinejoin="round" />
       ))}
     </svg>
   );
