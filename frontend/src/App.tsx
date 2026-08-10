@@ -1,28 +1,28 @@
-import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
-import { fetchAgents, fetchEvolution, fetchOutbox, fetchTasks, fetchDelegationTasks, retryOutbox, sendMessage, fetchTopics, runExpertPipeline, waitForExpertPipeline, fetchSession, loginWithPassword, logoutSession, fetchTokenUsage } from './api';
-import type { PipelineStep, PipelineResult, SessionData } from './api';
+import { useEffect, useMemo, useState } from 'react';
+import { fetchAgents, fetchEvolution, fetchTasks, sendMessage, fetchSession, loginWithPassword, logoutSession, fetchTokenUsage, fetchGrowth, fetchKnowledge, fetchUsageTrend, fetchHealth } from './api';
 import { OfficeIcon, type OfficeIconName } from './components/OfficeIcon';
 import { LoginPage } from './LoginPage';
-import type { AgentInfo, EvolutionData, OutboxData, TaskItem, TaskStatus } from './types';
+import type { AgentInfo, EvolutionData, GrowthData, KnowledgeData, TaskItem, TaskStatus, UsageTrendData } from './types';
+import type { SessionData, TokenUsageData } from './api';
 
-const WorkflowPage = lazy(() => import('./WorkflowPage').then((module) => ({ default: module.WorkflowPage })));
-
-type Tab = 'office' | 'workspace' | 'agent' | 'topics' | 'workflow' | 'evolution' | 'activity';
+type Tab = 'office' | 'agent' | 'evolution' | 'knowledge' | 'cost';
 type BeforeInstallPromptEvent = Event & {
   prompt: () => Promise<void>;
   userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }>;
 };
 
 type RoleMeta = { role: string; focus: string; tone: string; avatar: string; tags: string[] };
-type AutoRetryReport = { completed: boolean; lastAttemptAt: string | null; delivered: number | null; remaining: number | null; error: string };
 type ExpertAgentId = 'default' | 'media-ops' | 'investor';
 type ExpertDeliveryStatus = 'delivered' | 'queued' | 'failed';
 type ExpertDeliveryResult = { agentId: ExpertAgentId; status: ExpertDeliveryStatus; error?: string; responsePreview?: string };
-type WorkspaceLog = { id: string; createdAt: string; type: 'dispatch' | 'expert'; targetAgentId: ExpertAgentId; status: ExpertDeliveryStatus; title: string; batchId?: string; responsePreview?: string };
-type Workspace = { id: string; name: string; goal: string; memberIds: ExpertAgentId[]; createdAt: string; logs: WorkspaceLog[] };
-type WorkspaceActivityRecord = { id: string; source: 'sent' | 'outbox'; agent_id?: string | null; status: 'delivered' | 'queued'; time?: string | null; message_preview: string; response_preview?: string | null; fallback_reason?: string | null };
-type WorkspaceActivityData = { sent: WorkspaceActivityRecord[]; outbox: WorkspaceActivityRecord[]; tasks: TaskItem[] };
 type ChannelHealth = { id: string; name: string; port: number; online: boolean; timeout_seconds: number; last_error_reason?: string | null; recovery_hint?: string | null };
+type ResourceState = { status: 'loading' | 'success' | 'error'; error?: string };
+
+const initialGrowth: GrowthData = { generated_at: '', available: false, total: 0, summary: {}, records: [] };
+const initialKnowledge: KnowledgeData = { generated_at: '', available: false, counts: { 来源: 0, 概念: 0, 对比: 0, 实体: 0, 想法: 0 }, total: 0, trend: [], recent_commits: [] };
+const initialUsageTrend: UsageTrendData = { ok: true, available: false, days: [], total_calls: 0 };
+const initialTokenUsage: TokenUsageData = { ok: true, available: false, date: '', total: { input_tokens: 0, output_tokens: 0, cache_read_tokens: 0, total_tokens: 0, saved_tokens: 0, api_calls: 0 }, by_model: [] };
+const initialResourceState: ResourceState = { status: 'loading' };
 
 const fallbackRole: RoleMeta = { role: 'Hermes 智能员工', focus: '自定义智能员工', tone: 'blue', avatar: '', tags: ['任务执行', '协作响应'] };
 
@@ -37,8 +37,6 @@ const expertPanelAgents: Array<{ id: ExpertAgentId; name: string; perspective: s
   { id: 'media-ops', name: '小橙', perspective: '内容传播视角', prompt: '请从内容传播视角分析受众、表达、渠道与传播执行重点。' },
   { id: 'investor', name: '小金', perspective: '商业风险视角', prompt: '请从商业风险视角分析价值、成本、回报、约束与潜在风险。' },
 ];
-
-const workspaceStorageKey = 'hermes-office-workspaces';
 
 function SessionLoadingPage() {
   return (
@@ -69,67 +67,55 @@ const roleMap: Record<string, RoleMeta> = {
     role: '主控与知识系统',
     focus: '调度专家团、维护知识库、派发开发任务',
     tone: 'slate',
-    avatar: '/avatars/default.png',
+    avatar: '/avatars/default.webp?v=2',
     tags: ['知识库维护', '专家团调度', 'Codex派发', '浏览器验收'],
   },
   'media-ops': {
     role: '内容与媒体运营',
     focus: '负责选题、内容改写与多平台分发',
     tone: 'blue',
-    avatar: '/avatars/media-ops.png',
+    avatar: '/avatars/media-ops.webp?v=2',
     tags: ['内容选题', '视频理解', '多平台分发', '文案改写'],
   },
   investor: {
     role: '商业与投资分析',
     focus: '负责定价、商业模式与收益风险判断',
     tone: 'sand',
-    avatar: '/avatars/investor.png',
+    avatar: '/avatars/investor.webp?v=2',
     tags: ['商业分析', 'ROI判断', '定价策略', '风险评估'],
   },
 };
 
 const tabs: Array<{ key: Tab; label: string; icon: OfficeIconName }> = [
   { key: 'office', label: '办公室', icon: 'office' },
-  { key: 'workspace', label: '空间', icon: 'workspace' },
-  { key: 'agent', label: '员工', icon: 'agent' },
-  { key: 'topics', label: '选题', icon: 'activity' },
-  { key: 'workflow', label: '工作流', icon: 'workflow' },
   { key: 'evolution', label: '进化', icon: 'growth' },
-  { key: 'activity', label: '任务', icon: 'activity' },
+  { key: 'knowledge', label: '知识库', icon: 'search' },
+  { key: 'cost', label: '成本', icon: 'activity' },
 ];
 
-function createDefaultWorkspace(): Workspace {
-  return {
-    id: 'workspace-example',
-    name: 'Hermes 移动工作空间',
-    goal: '集中三位智能员工，协作推进移动办公室产品迭代。',
-    memberIds: ['default', 'media-ops', 'investor'],
-    createdAt: new Date().toISOString(),
-    logs: [],
-  };
-}
+const growthTypeLabels: Record<string, { label: string; icon: OfficeIconName }> = {
+  growth: { label: '成长', icon: 'growth' },
+  decision: { label: '决策', icon: 'check' },
+  pitfall: { label: '踩坑', icon: 'alert' },
+  review: { label: '复盘', icon: 'activity' },
+  idea: { label: '想法', icon: 'search' },
+  case: { label: '案例', icon: 'file' },
+  skill: { label: '技能', icon: 'terminal' },
+  knowledge: { label: '知识', icon: 'database' },
+};
 
-function loadWorkspaces(): Workspace[] {
-  try {
-    const stored = window.localStorage.getItem(workspaceStorageKey);
-    if (!stored) return [createDefaultWorkspace()];
-    const parsed = JSON.parse(stored) as Array<Omit<Workspace, 'logs'> & { logs?: WorkspaceLog[] }>;
-    const valid = parsed.filter((workspace) => (
-      workspace
-      && typeof workspace.id === 'string'
-      && typeof workspace.name === 'string'
-      && typeof workspace.goal === 'string'
-      && Array.isArray(workspace.memberIds)
-      && typeof workspace.createdAt === 'string'
-    )).map((workspace) => ({
-      ...workspace,
-      logs: Array.isArray(workspace.logs) ? workspace.logs.slice(0, 20) : [],
-    }));
-    return valid.length > 0 ? valid : [createDefaultWorkspace()];
-  } catch {
-    return [createDefaultWorkspace()];
-  }
-}
+
+const taskStatusMeta: Record<TaskStatus, { label: string; icon: OfficeIconName }> = {
+  running: { label: '进行中', icon: 'clock' },
+  blocked: { label: '阻塞', icon: 'alert' },
+  completed: { label: '已完成', icon: 'check' },
+  queued: { label: '待补投', icon: 'database' },
+  failed: { label: '失败', icon: 'alert' },
+  paused: { label: '已暂停', icon: 'alert' },
+  event: { label: '事件', icon: 'activity' },
+};
+
+const taskSourceLabels: Record<string, string> = { cron: '定时任务', outbox: '兜底队列', sent: '已送达', gateway: '网关事件', kanban: '智能看板' };
 
 function formatTime(value?: string | null) {
   if (!value) return '暂无';
@@ -148,6 +134,19 @@ function formatAttemptTime(value?: string | null) {
 function formatAgentName(agentId?: string | null) {
   if (!agentId) return '';
   return agentNameMap[agentId] ?? agentId;
+}
+
+function ResourceStateCard({ state, onRetry, label }: { state: ResourceState; onRetry: () => void; label: string }) {
+  if (state.status === 'loading') {
+    return <div className="resource-state-card" role="status"><OfficeIcon name="clock" size={18} /><div><strong>正在加载{label}…</strong><small>请稍候</small></div></div>;
+  }
+  return (
+    <div className="resource-state-card error" role="alert">
+      <OfficeIcon name="alert" size={18} />
+      <div><strong>{label}加载失败</strong><small>{state.error || '暂时无法读取数据，请稍后重试。'}</small></div>
+      <button type="button" onClick={onRetry}><OfficeIcon name="refresh" size={14} />重试</button>
+    </div>
+  );
 }
 
 function isIssueCode(value?: string | null) {
@@ -207,26 +206,6 @@ function sortTasksByRecent(tasks: TaskItem[]) {
       return (Number.isNaN(rightTime) ? 0 : rightTime) - (Number.isNaN(leftTime) ? 0 : leftTime) || left.index - right.index;
     })
     .map(({ task }) => task);
-}
-
-function sortWorkspaceTasks(tasks: TaskItem[]) {
-  const sourcePriority = (task: TaskItem) => task.source === 'sent' ? 0 : task.source === 'outbox' ? 1 : 2;
-  return tasks
-    .map((task, index) => ({ task, index }))
-    .sort((left, right) => {
-      const priorityDifference = sourcePriority(left.task) - sourcePriority(right.task);
-      if (priorityDifference) return priorityDifference;
-      const leftTime = left.task.time ? new Date(left.task.time).getTime() : 0;
-      const rightTime = right.task.time ? new Date(right.task.time).getTime() : 0;
-      return (Number.isNaN(rightTime) ? 0 : rightTime) - (Number.isNaN(leftTime) ? 0 : leftTime) || left.index - right.index;
-    })
-    .map(({ task }) => task);
-}
-
-async function fetchWorkspaceActivity(workspaceName: string): Promise<WorkspaceActivityData> {
-  const response = await fetch(`/api/workspaces/activity?workspace_name=${encodeURIComponent(workspaceName)}`, { headers: { Accept: 'application/json' } });
-  if (!response.ok) throw new Error(`HTTP ${response.status}`);
-  return response.json() as Promise<WorkspaceActivityData>;
 }
 
 async function fetchChannelHealth(): Promise<ChannelHealth[]> {
@@ -290,7 +269,6 @@ function AgentCard({ agent, active, onClick }: { agent: AgentInfo; active: boole
   return (
     <button className={`workstation-card ${active ? 'active' : ''}`} onClick={onClick}>
       <div className="desk-scene">
-        <div className="monitor-shell" />
         <AgentPortrait tone={meta.tone} avatar={meta.avatar} name={agent.name} />
       </div>
       <div className="agent-main">
@@ -322,7 +300,7 @@ function VirtualOfficeCard({ onSelectAgent }: { onSelectAgent: (agentId: string)
         <span><i className="workstation" />工位</span>
       </div>
       <div className="office-room">
-        <img className="office-scene-bg" src="/images/office-scene.png" alt="" />
+        <img className="office-scene-bg" src="/images/office-scene.webp?v=2" alt="" />
         <div className="office-world" aria-hidden="true" />
         <div className="office-annotations" aria-label="办公室分区与员工坐席">
           <span className="office-callout zone-callout kitchen-callout">茶水区 / 厨房</span>
@@ -368,8 +346,15 @@ function ResourceTaskOverview({ tasks }: { tasks: TaskItem[] }) {
     }).catch(() => setTokenData(prev => ({ ...prev, loaded: true })));
   }, []);
 
-  const runningCount = tasks.filter((task) => task.status === 'running').length;
-  const completedCount = tasks.filter((task) => task.status === 'completed').length;
+  const counts = useMemo(() => {
+    let runningCount = 0, completedCount = 0;
+    for (const t of tasks) {
+      if (t.status === 'running') runningCount++;
+      else if (t.status === 'completed') completedCount++;
+    }
+    return { runningCount, completedCount };
+  }, [tasks]);
+  const { runningCount, completedCount } = counts;
   const recentTasks = tasks.slice(0, 8);
 
   return (
@@ -488,9 +473,9 @@ function QuickDispatchCard({ agents, onSelectAgent }: { agents: AgentInfo[]; onS
         <div><p className="section-kicker">Quick Dispatch</p><h2>快速派活</h2></div>
         <span>选择员工后输入任务</span>
       </div>
-      {agents.length > 0 ? (
+      {agents.filter((a) => a.status !== 'offline').length > 0 ? (
         <div className="quick-dispatch-list">
-          {agents.map((agent) => {
+          {agents.filter((a) => a.status !== 'offline').map((agent) => {
             const meta = roleMap[agent.id] ?? fallbackRole;
             return (
               <button className="quick-dispatch-button" type="button" key={agent.id} onClick={() => onSelectAgent(agent.id)} aria-label={`给${agent.name}派活`}>
@@ -511,12 +496,16 @@ function QuickDispatchCard({ agents, onSelectAgent }: { agents: AgentInfo[]; onS
   );
 }
 
-function OfficePage({ agents, tasks, selectedId, onSelectAgent, onOpenTasks, backendOffline, loading }: { agents: AgentInfo[]; tasks: TaskItem[]; selectedId: string; onSelectAgent: (agentId: string) => void; onOpenTasks: () => void; backendOffline: boolean; loading: boolean }) {
+function OfficePage({ agents, tasks, selectedId, onSelectAgent, onOpenTasks, backendOffline, loading, usageTrend, knowledge, costState, knowledgeState }: { agents: AgentInfo[]; tasks: TaskItem[]; selectedId: string; onSelectAgent: (agentId: string) => void; onOpenTasks: () => void; backendOffline: boolean; loading: boolean; usageTrend: UsageTrendData; knowledge: KnowledgeData; costState: ResourceState; knowledgeState: ResourceState }) {
   const online = agents.filter((agent) => agent.status === 'online').length;
   const offline = Math.max(agents.length - online, 0);
   const hasAgentStatus = agents.length > 0;
   const blocked = tasks.filter((task) => task.status === 'blocked').length;
   const running = tasks.filter((task) => task.status === 'running').length;
+  const shanghaiToday = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+  const todayCalls = costState.status === 'success' ? usageTrend.today?.api_calls ?? '—' : '—';
+  const todayIngest = knowledgeState.status === 'success' ? knowledge.trend?.find((item) => item.date === shanghaiToday)?.files_added ?? '—' : '—';
+  const knowledgeTotal = knowledgeState.status === 'success' ? knowledge.total ?? '—' : '—';
   return (
     <section className="page-section">
       <div className="office-overview">
@@ -532,6 +521,11 @@ function OfficePage({ agents, tasks, selectedId, onSelectAgent, onOpenTasks, bac
           <div><span className="metric-dot online" /><strong>{hasAgentStatus ? online : '—'}</strong><small>在线员工</small></div>
           <div><span className="metric-dot offline" /><strong>{hasAgentStatus ? offline : '—'}</strong><small>离线员工</small></div>
           <div><span className="metric-dot pending" /><strong>{blocked + running}</strong><small>待处理任务</small></div>
+        </div>
+        <div className="today-overview">
+          <div><strong>{todayCalls}</strong><small>今日 API 调用</small></div>
+          <div><strong>{todayIngest}</strong><small>今日知识入库</small></div>
+          <div><strong>{knowledgeTotal}</strong><small>知识库总量</small></div>
         </div>
       </div>
       <VirtualOfficeCard onSelectAgent={onSelectAgent} />
@@ -760,55 +754,7 @@ function AgentPage({ agents, selectedId, onSelectAgent, agent, tasks, evolution,
   );
 }
 
-function TopicsPage() {
-  const [topics, setTopics] = useState<Array<{title: string; platform: string; reason: string; value: string}>>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [reloadToken, setReloadToken] = useState(0);
-
-  useEffect(() => {
-    fetchTopics().then((res) => {
-      const data = res.data;
-      if (data?.ok && data?.topics?.length) {
-        setTopics(data.topics);
-      } else {
-        setError(res.offline ? '选题服务暂时不可用，请稍后重试' : data?.source === 'expired' ? '最近 48 小时没有有效选题数据' : data?.source === 'none' ? '今日尚未生成选题数据' : '暂无可展示的选题数据');
-      }
-      setLoading(false);
-    }).catch(() => { setError('加载失败'); setLoading(false); });
-  }, [reloadToken]);
-
-  if (loading) return <section className="page-section"><p className="section-kicker">选题</p><p style={{padding: '16px', color: '#888'}}>加载中…</p></section>;
-  if (error) return (
-    <section className="page-section">
-      <p className="section-kicker">选题</p>
-      <div className="empty-card topics-empty" role="status">
-        <OfficeIcon name="file" size={19} />
-        <p>{error}</p>
-        <button className="mini-button" type="button" onClick={() => { setError(''); setLoading(true); setReloadToken((current) => current + 1); }}>重新读取</button>
-      </div>
-    </section>
-  );
-
-  return (
-    <section className="page-section topics-page">
-      <p className="section-kicker">Content选题</p>
-      <h2>今日备选</h2>
-      {topics.map((t, i) => (
-        <div key={i} className="topics-card">
-          <div className="topics-header">
-            <span className="topics-title">{t.title}</span>
-            <span className={`topics-platform ${t.platform === '小红书' ? 'red' : 'blue'}`}>{t.platform}</span>
-          </div>
-          <p className="topics-reason">推荐理由：{t.reason}</p>
-          <p className="topics-value">价值：{t.value}</p>
-        </div>
-      ))}
-    </section>
-  );
-}
-
-function EvolutionPage({ evolution }: { evolution: EvolutionData }) {
+function EvolutionPage({ evolution, growth, growthState, onRetryGrowth }: { evolution: EvolutionData; growth: GrowthData; growthState: ResourceState; onRetryGrowth: () => void }) {
   const [expandedSkillGroups, setExpandedSkillGroups] = useState<Record<string, boolean>>({});
   const recentSkills = evolution.skills?.recent ?? [];
   const profiles = evolution.profiles ?? [];
@@ -870,6 +816,24 @@ function EvolutionPage({ evolution }: { evolution: EvolutionData }) {
           <div><strong>{profiles.length ? `${readyProfiles}/${profiles.length}` : '暂无'}</strong><span>档案完整</span></div>
           <div><strong>{formatTime(latestEvolution)}</strong><span>最近进化</span></div>
         </div>
+      </div>
+
+      <div className="section-heading"><div><p className="section-kicker">Growth Records</p><h2>成长记录</h2></div><span>{growthState.status === 'loading' ? '加载中' : growthState.status === 'error' ? '加载失败' : growth.total ? `${growth.total} 条真实记录` : '待记录'}</span></div>
+      <div className="archive-card growth-records-card">
+        {growthState.status !== 'success' ? <ResourceStateCard state={growthState} onRetry={onRetryGrowth} label="成长记录" /> : growth.records.length === 0 ? <p className="archive-empty">暂无成长记录。试着在办公室记一笔「成长」吧。</p> : (
+          <div className="growth-records-list">
+            {growth.records.slice(0, 12).map((record) => {
+              const recordType = typeof record.type === 'string' ? record.type : 'other';
+              const meta = growthTypeLabels[recordType] ?? { label: recordType === 'other' ? '其他' : recordType, icon: 'file' as OfficeIconName };
+              return (
+                <div className="growth-record-item" key={record.id}>
+                  <span className={`growth-record-type ${recordType}`}><OfficeIcon name={meta.icon} size={13} />{meta.label}</span>
+                  <div className="growth-record-body"><strong>{record.title}</strong><time>{formatTime(record.date)}</time></div>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       <div className="section-heading"><div><p className="section-kicker">Capability Matrix</p><h2>能力矩阵</h2></div><span>按现有 Skill 名称归档</span></div>
@@ -968,830 +932,155 @@ function EvolutionPage({ evolution }: { evolution: EvolutionData }) {
   );
 }
 
-type TaskFilter = 'all' | 'running' | 'blocked' | 'completed' | 'queued' | 'interrupted' | 'event';
+function KnowledgePage({ knowledge, resourceState, onRetry }: { knowledge: KnowledgeData; resourceState: ResourceState; onRetry: () => void }) {
+  const counts = knowledge.counts ?? { 来源: 0, 概念: 0, 对比: 0, 实体: 0, 想法: 0 };
+  const total = knowledge.total ?? 0;
+  const trend = knowledge.trend ?? [];
+  const trendMaximum = Math.max(...trend.map((item) => item.files_added), 1);
+  const commits = knowledge.recent_commits ?? [];
+  const countIcons: Record<string, OfficeIconName> = { 来源: 'file', 概念: 'search', 对比: 'activity', 实体: 'user', 想法: 'growth' };
 
-const taskFilters: Array<{ key: TaskFilter; label: string }> = [
-  { key: 'all', label: '全部' },
-  { key: 'running', label: '进行中' },
-  { key: 'blocked', label: '阻塞' },
-  { key: 'completed', label: '已完成' },
-  { key: 'queued', label: '待补投' },
-  { key: 'interrupted', label: '中断/失败' },
-  { key: 'event', label: '事件' },
-];
-
-const taskStatusMeta: Record<TaskStatus, { label: string; icon: OfficeIconName }> = {
-  running: { label: '进行中', icon: 'clock' },
-  blocked: { label: '阻塞', icon: 'alert' },
-  completed: { label: '已完成', icon: 'check' },
-  queued: { label: '待补投', icon: 'database' },
-  failed: { label: '失败', icon: 'alert' },
-  paused: { label: '已暂停', icon: 'alert' },
-  event: { label: '事件', icon: 'activity' },
-};
-
-const taskSourceLabels: Record<string, string> = { cron: '定时任务', outbox: '兜底队列', sent: '已送达', gateway: '网关事件', kanban: '智能看板' };
-
-function WorkspacePage({ tasks, onDispatch, onExpertSubmit }: { tasks: TaskItem[]; onDispatch: (agentId: ExpertAgentId, workspaceName: string, goal: string, task: string) => Promise<ExpertDeliveryResult>; onExpertSubmit: (memberIds: ExpertAgentId[], workspaceName: string, goal: string, question: string, batchId: string) => Promise<ExpertDeliveryResult[]> }) {
-  const [workspaces, setWorkspaces] = useState<Workspace[]>(loadWorkspaces);
-  const [selectedWorkspaceId, setSelectedWorkspaceId] = useState(() => loadWorkspaces()[0]?.id ?? '');
-  const [creating, setCreating] = useState(false);
-  const [name, setName] = useState('');
-  const [goal, setGoal] = useState('');
-  const [memberIds, setMemberIds] = useState<ExpertAgentId[]>(['default']);
-  const [question, setQuestion] = useState('');
-  const [submitting, setSubmitting] = useState(false);
-  const [deliveryResults, setDeliveryResults] = useState<ExpertDeliveryResult[]>([]);
-  const [dispatchAgentId, setDispatchAgentId] = useState<ExpertAgentId>('default');
-  const [dispatchTask, setDispatchTask] = useState('');
-  const [dispatching, setDispatching] = useState(false);
-  const [dispatchResult, setDispatchResult] = useState<ExpertDeliveryResult | null>(null);
-  const [workspaceActivity, setWorkspaceActivity] = useState<WorkspaceActivityData>({ sent: [], outbox: [], tasks: [] });
-  const [activityLoading, setActivityLoading] = useState(false);
-  const [activityRefresh, setActivityRefresh] = useState(0);
-  // 深度分析流水线状态
-  const [pipelineMode, setPipelineMode] = useState<'parallel' | 'serial'>('parallel');
-  const [pipelineSteps, setPipelineSteps] = useState<PipelineStep[]>([]);
-  const [pipelineResult, setPipelineResult] = useState<PipelineResult | null>(null);
-  const [pipelineSubmitting, setPipelineSubmitting] = useState(false);
-  const selectedWorkspace = workspaces.find((workspace) => workspace.id === selectedWorkspaceId) ?? workspaces[0];
-  const workspaceTasks = useMemo(() => {
-    if (!selectedWorkspace) return [];
-    const matchedTasks = workspaceActivity.tasks.length > 0
-      ? workspaceActivity.tasks
-      : tasks.filter((task) => taskContainsText(task, selectedWorkspace.name));
-    return sortWorkspaceTasks(matchedTasks);
-  }, [selectedWorkspace, tasks, workspaceActivity.tasks]);
-  const recentWorkspaceTasks = workspaceTasks.slice(0, 5);
-  const recentMemberTasks = useMemo(() => {
-    if (!selectedWorkspace) return [];
-    return sortTasksByRecent(tasks.filter((task) => (
-      Boolean(task.agent_id) && selectedWorkspace.memberIds.includes(task.agent_id as ExpertAgentId)
-    ))).slice(0, 5);
-  }, [selectedWorkspace, tasks]);
-  const workspaceQueuedTasks = workspaceTasks.filter((task) => task.status === 'queued');
-  const unmatchedQueuedLogs = selectedWorkspace?.logs.filter((log) => (
-    log.status === 'queued' && !workspaceQueuedTasks.some((task) => taskContainsText(task, log.title))
-  )) ?? [];
-  const workspacePendingCount = workspaceQueuedTasks.length + unmatchedQueuedLogs.length;
-  const workspaceResults = useMemo(() => [...workspaceActivity.sent, ...workspaceActivity.outbox].slice(0, 8), [workspaceActivity]);
-  const latestExpertBatch = useMemo(() => {
-    if (!selectedWorkspace) return [];
-    const expertLogs = selectedWorkspace.logs.filter((log) => log.type === 'expert');
-    if (expertLogs.length === 0) return [];
-    const latestBatchId = expertLogs[0].batchId;
-    if (latestBatchId) return expertLogs.filter((log) => log.batchId === latestBatchId);
-    const latestCreatedAt = expertLogs[0].createdAt;
-    return expertLogs.filter((log) => !log.batchId && log.createdAt === latestCreatedAt);
-  }, [selectedWorkspace]);
-
-  useEffect(() => {
-    window.localStorage.setItem(workspaceStorageKey, JSON.stringify(workspaces));
-  }, [workspaces]);
-
-  useEffect(() => {
-    setQuestion('');
-    setDeliveryResults([]);
-    setDispatchTask('');
-    setDispatchResult(null);
-    setPipelineSteps([]);
-    setPipelineResult(null);
-  }, [selectedWorkspaceId]);
-
-  useEffect(() => {
-    if (!selectedWorkspace) return;
-    let active = true;
-    setActivityLoading(true);
-    fetchWorkspaceActivity(selectedWorkspace.name)
-      .then((data) => { if (active) setWorkspaceActivity(data); })
-      .catch(() => { if (active) setWorkspaceActivity({ sent: [], outbox: [], tasks: [] }); })
-      .finally(() => { if (active) setActivityLoading(false); });
-    return () => { active = false; };
-  }, [selectedWorkspace, activityRefresh]);
-
-  useEffect(() => {
-    if (!selectedWorkspace) return;
-    if (selectedWorkspace.memberIds.length > 0 && !selectedWorkspace.memberIds.includes(dispatchAgentId)) {
-      setDispatchAgentId(selectedWorkspace.memberIds[0]);
-    }
-  }, [dispatchAgentId, selectedWorkspace]);
-
-  function toggleMember(agentId: ExpertAgentId) {
-    setMemberIds((current) => current.includes(agentId) ? current.filter((id) => id !== agentId) : [...current, agentId]);
-  }
-
-  function handleCreateWorkspace() {
-    const workspaceName = name.trim();
-    const workspaceGoal = goal.trim();
-    if (!workspaceName || !workspaceGoal || memberIds.length === 0) return;
-    const workspace: Workspace = {
-      id: `workspace-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-      name: workspaceName,
-      goal: workspaceGoal,
-      memberIds,
-      createdAt: new Date().toISOString(),
-      logs: [],
-    };
-    setWorkspaces((current) => [...current, workspace]);
-    setSelectedWorkspaceId(workspace.id);
-    setName('');
-    setGoal('');
-    setMemberIds(['default']);
-    setCreating(false);
-  }
-
-  function appendLogs(workspaceId: string, logs: WorkspaceLog[]) {
-    setWorkspaces((current) => current.map((workspace) => (
-      workspace.id === workspaceId
-        ? { ...workspace, logs: [...logs, ...workspace.logs].slice(0, 20) }
-        : workspace
-    )));
-  }
-
-  async function handleDispatch() {
-    const task = dispatchTask.trim();
-    if (!selectedWorkspace || !task || dispatching || !selectedWorkspace.memberIds.includes(dispatchAgentId)) return;
-    setDispatching(true);
-    setDispatchResult(null);
-    try {
-      const result = await onDispatch(dispatchAgentId, selectedWorkspace.name, selectedWorkspace.goal, task);
-      setDispatchResult(result);
-      appendLogs(selectedWorkspace.id, [{
-        id: `workspace-log-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-        createdAt: new Date().toISOString(),
-        type: 'dispatch',
-        targetAgentId: dispatchAgentId,
-        status: result.status,
-        title: task,
-        responsePreview: result.responsePreview,
-      }]);
-      setActivityRefresh((current) => current + 1);
-      setDispatchTask('');
-    } finally {
-      setDispatching(false);
-    }
-  }
-
-  async function handleSubmit() {
-    const trimmedQuestion = question.trim();
-    if (!selectedWorkspace || !trimmedQuestion || submitting) return;
-    setSubmitting(true);
-    setDeliveryResults([]);
-    setPipelineSteps([]);
-    setPipelineResult(null);
-
-    // ── 串行模式 ──────────────────────────────────────────────
-    if (pipelineMode === 'serial') {
-      setPipelineSubmitting(true);
-      try {
-        const initialResult = await runExpertPipeline(
-          selectedWorkspace.name,
-          selectedWorkspace.goal,
-          trimmedQuestion,
-          selectedWorkspace.memberIds,
-          'serial'
-        );
-        setPipelineSteps(initialResult.steps);
-        setPipelineResult(initialResult);
-        const result = await waitForExpertPipeline(initialResult.batch_id, (nextResult) => {
-          setPipelineSteps(nextResult.steps);
-          setPipelineResult(nextResult);
-        });
-
-        // 记录日志
-        const createdAt = new Date().toISOString();
-        appendLogs(selectedWorkspace.id, result.steps
-          .filter((s) => s.status === 'done' || s.status === 'error' || s.status === 'offline')
-          .map((step, index) => ({
-            id: `workspace-log-${Date.now()}-${index}-${Math.random().toString(36).slice(2, 8)}`,
-            createdAt,
-            type: 'expert' as const,
-            targetAgentId: step.agent_id as ExpertAgentId,
-            status: step.status === 'done' ? 'delivered' as const : step.status === 'error' ? 'failed' as const : 'queued' as const,
-            title: trimmedQuestion,
-            batchId: result.batch_id,
-            responsePreview: step.response_preview,
-          }))
-        );
-        setActivityRefresh((current) => current + 1);
-        setQuestion('');
-      } catch (error) {
-        setPipelineResult((current) => current ? {
-          ...current,
-          status: 'failed',
-          synthesize_error: error instanceof Error ? error.message : '专家流水线失败',
-        } : current);
-      } finally {
-        setPipelineSubmitting(false);
-        setSubmitting(false);
-      }
-      return;
-    }
-
-    // ── 并行模式（原有逻辑）──────────────────────────────────
-    try {
-      const batchId = `expert-batch-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-      const results = await onExpertSubmit(selectedWorkspace.memberIds, selectedWorkspace.name, selectedWorkspace.goal, trimmedQuestion, batchId);
-      setDeliveryResults(results);
-      const createdAt = new Date().toISOString();
-      appendLogs(selectedWorkspace.id, results.map((result, index) => ({
-        id: `workspace-log-${Date.now()}-${index}-${Math.random().toString(36).slice(2, 8)}`,
-        createdAt,
-        type: 'expert',
-        targetAgentId: result.agentId,
-        status: result.status,
-        title: trimmedQuestion,
-        batchId,
-        responsePreview: result.responsePreview,
-      })));
-      setActivityRefresh((current) => current + 1);
-      setQuestion('');
-    } finally {
-      setSubmitting(false);
-    }
+  if (resourceState.status !== 'success') {
+    return <section className="page-section knowledge-page"><ResourceStateCard state={resourceState} onRetry={onRetry} label="知识库统计" /></section>;
   }
 
   return (
-    <section className="page-section workspace-page">
-      <div className="workspace-header">
-        <div><p className="eyebrow">Workspace</p><h1>工作空间</h1><span>围绕项目目标组织成员与真实任务</span></div>
-        <button className="workspace-create-button" type="button" onClick={() => setCreating((current) => !current)}>
-          <OfficeIcon name={creating ? 'chevron' : 'workspace'} size={18} />
-          {creating ? '收起' : '新建空间'}
-        </button>
+    <section className="page-section knowledge-page">
+      <div className="growth-hero">
+        <div className="growth-hero-heading">
+          <div className="overview-mark"><OfficeIcon name="search" size={24} /></div>
+          <div><p className="eyebrow">Knowledge Base</p><h1>知识资产库</h1></div>
+        </div>
+        <p>wiki 知识库实时统计：来源摘要、概念沉淀、对比分析与灵感想法的规模与最近动态。</p>
+        <div className="growth-summary">
+          <div><strong>{knowledge.available ? total : '暂无'}</strong><span>知识总数</span></div>
+          <div><strong>{counts['来源'] ?? 0}</strong><span>来源摘要</span></div>
+          <div><strong>{counts['概念'] ?? 0}</strong><span>概念沉淀</span></div>
+        </div>
       </div>
 
-      {creating ? (
-        <div className="workspace-create-card">
-          <label><span>空间名称</span><input value={name} onChange={(event) => setName(event.target.value)} placeholder="例如：新品发布项目" /></label>
-          <label><span>项目目标</span><textarea value={goal} onChange={(event) => setGoal(event.target.value)} placeholder="描述这个空间要共同完成的目标" /></label>
-          <fieldset>
-            <legend>选择成员</legend>
-            <div className="workspace-member-options">
-              {expertPanelAgents.map((expert) => (
-                <button key={expert.id} type="button" className={memberIds.includes(expert.id) ? 'selected' : ''} onClick={() => toggleMember(expert.id)}>
-                  <i className={expert.id} />
-                  <span><strong>{expert.name}</strong><small>{expert.perspective}</small></span>
-                  <OfficeIcon name={memberIds.includes(expert.id) ? 'check' : 'user'} size={15} />
-                </button>
-              ))}
-            </div>
-          </fieldset>
-          <button className="workspace-primary-button" type="button" onClick={handleCreateWorkspace} disabled={!name.trim() || !goal.trim() || memberIds.length === 0}>创建并进入空间</button>
-        </div>
-      ) : null}
-
-      <div className="workspace-switcher" aria-label="工作空间列表">
-        {workspaces.map((workspace) => (
-          <button key={workspace.id} className={workspace.id === selectedWorkspace?.id ? 'selected' : ''} type="button" onClick={() => setSelectedWorkspaceId(workspace.id)}>
-            <OfficeIcon name="workspace" size={16} />
-            <span>{workspace.name}</span>
-          </button>
+      <div className="section-heading"><div><p className="section-kicker">Library Size</p><h2>知识构成</h2></div><span>按目录归档</span></div>
+      <div className="capability-grid">
+        {Object.entries(counts).map(([key, value]) => (
+          <div className="capability-card" key={key}>
+            <div className="capability-icon"><OfficeIcon name={countIcons[key] ?? 'file'} size={18} /></div>
+            <div><strong>{key}</strong><small>{value} 条</small></div>
+            <span className="capability-state recorded">已有沉淀</span>
+          </div>
         ))}
       </div>
 
-      {selectedWorkspace ? (
-        <>
-          <div className="workspace-detail-card">
-            <div className="workspace-detail-heading">
-              <div className="workspace-detail-icon"><OfficeIcon name="workspace" size={22} /></div>
-              <div><p>当前空间</p><h2>{selectedWorkspace.name}</h2><small>创建于 {formatTime(selectedWorkspace.createdAt)}</small></div>
-            </div>
-            <div className="workspace-goal"><span>项目目标</span><p>{selectedWorkspace.goal}</p></div>
-            <div className="workspace-member-chips" aria-label="空间成员">
-              {selectedWorkspace.memberIds.map((agentId) => {
-                const expert = expertPanelAgents.find((item) => item.id === agentId);
-                return <span key={agentId} className={agentId}><i />{expert?.name ?? formatAgentName(agentId)}<small>{expert?.perspective}</small></span>;
-              })}
-            </div>
-          </div>
-
-          <div className="workspace-mini-stats" aria-label="空间状态概览">
-            <div><span>成员数</span><strong>{selectedWorkspace.memberIds.length}</strong><small>当前空间成员</small></div>
-            <div><span>空间日志数</span><strong>{selectedWorkspace.logs.length}</strong><small>最近最多 20 条</small></div>
-            <div><span>相关任务数</span><strong>{workspaceTasks.length}</strong><small>真实任务名称命中</small></div>
-            <div><span>待补投数</span><strong>{workspacePendingCount}</strong><small>任务 {workspaceQueuedTasks.length} · 日志 {unmatchedQueuedLogs.length}</small></div>
-          </div>
-
-          <div className="workspace-dispatch-card">
-            <div className="workspace-section-heading"><div><span>Workspace Dispatch</span><h3>空间派活</h3></div><small>单独指派当前空间成员</small></div>
-            <label className="workspace-dispatch-select">
-              <span>目标成员</span>
-              <select value={dispatchAgentId} onChange={(event) => setDispatchAgentId(event.target.value as ExpertAgentId)} aria-label="空间派活目标成员">
-                {selectedWorkspace.memberIds.map((agentId) => {
-                  const expert = expertPanelAgents.find((item) => item.id === agentId);
-                  return <option key={agentId} value={agentId}>{expert?.name ?? formatAgentName(agentId)} · {expert?.perspective ?? '空间成员视角'}</option>;
-                })}
-              </select>
-            </label>
-            <textarea value={dispatchTask} onChange={(event) => setDispatchTask(event.target.value)} placeholder={`输入要交给“${formatAgentName(dispatchAgentId)}”的具体任务`} aria-label="空间派活任务" />
-            <button className="workspace-primary-button" type="button" onClick={() => void handleDispatch()} disabled={dispatching || !dispatchTask.trim()}><OfficeIcon name="send" size={16} />{dispatching ? '正在派活…' : `派给 ${formatAgentName(dispatchAgentId)}`}</button>
-            {dispatchResult ? (
-              <div className={`workspace-dispatch-result ${dispatchResult.status}`} aria-live="polite">
-                <OfficeIcon name={dispatchResult.status === 'delivered' ? 'check' : dispatchResult.status === 'queued' ? 'database' : 'alert'} size={15} />
-                <span>{dispatchResult.status === 'delivered' ? '已发送到 Hermes' : dispatchResult.status === 'queued' ? '已入队兜底' : '派活失败'}</span>
-              </div>
-            ) : null}
-          </div>
-
-          <div className="workspace-task-card">
-            <div className="workspace-section-heading"><div><span>Task Summary</span><h3>空间任务摘要</h3></div><small>{recentWorkspaceTasks.length > 0 ? `名称命中 · 最近 ${recentWorkspaceTasks.length} 条` : '暂无名称命中'}</small></div>
-            {recentWorkspaceTasks.length > 0 ? (
-              <div className="workspace-task-list">
-                {recentWorkspaceTasks.map((task) => {
-                  const taskMeta = taskStatusMeta[task.status];
-                  return (
-                    <div key={task.id}>
-                      <span className={`task-check ${task.status}`}><OfficeIcon name={taskMeta.icon} size={14} /></span>
-                      <div><strong>{task.title}</strong><p>{formatTaskDetail(task, '任务详情待补充')}</p><small>{formatAgentName(task.agent_id)} · {formatTime(task.time)}</small></div>
-                      <em className={`task-status ${task.status}`}>{taskMeta.label}</em>
-                    </div>
-                  );
-                })}
-              </div>
-            ) : <div className="workspace-empty"><OfficeIcon name="activity" size={18} /><span>真实任务中暂未找到包含“{selectedWorkspace.name}”的记录</span></div>}
-          </div>
-
-          <div className="workspace-result-card">
-            <div className="workspace-section-heading"><div><span>Workspace Results</span><h3>空间结果</h3></div><small>{activityLoading ? '正在读取真实记录' : `${workspaceResults.length} 条真实回流`}</small></div>
-            {workspaceResults.length > 0 ? (
-              <div className="workspace-result-list">
-                {workspaceResults.map((record) => (
-                  <div key={record.id}>
-                    <div className="workspace-result-head">
-                      <span className={`workspace-log-icon ${record.status === 'queued' ? 'queued' : ''}`}><OfficeIcon name={record.status === 'delivered' ? 'check' : 'database'} size={14} /></span>
-                      <div><strong>{formatAgentName(record.agent_id)}</strong><small>{record.source === 'sent' ? 'sent.jsonl · 已送达' : 'outbox.jsonl · 待补投'} · {formatTime(record.time)}</small></div>
-                      <em className={`workspace-log-status ${record.status === 'queued' ? 'queued' : ''}`}>{record.status === 'delivered' ? '已送达' : '待补投'}</em>
-                    </div>
-                    <p className="workspace-message-preview">{record.message_preview}</p>
-                    <div className="workspace-response-preview"><span>回执预览</span><p>{record.response_preview || (record.status === 'queued' ? '尚未送达，暂无真实回执。' : '已送达，但当前记录没有 response_preview。')}</p></div>
-                  </div>
-                ))}
-              </div>
-            ) : <div className="workspace-empty"><OfficeIcon name="database" size={18} /><span>{activityLoading ? '正在读取 sent.jsonl 与 outbox.jsonl…' : '当前空间暂无真实送达或待补投记录'}</span></div>}
-          </div>
-
-          <div className="workspace-member-task-card">
-            <div className="workspace-section-heading"><div><span>Member Activity</span><h3>成员最近任务辅助区</h3></div><small>按成员粗略关联 · 最近 {recentMemberTasks.length} 条</small></div>
-            {recentMemberTasks.length > 0 ? (
-              <div className="workspace-task-list workspace-member-task-list">
-                {recentMemberTasks.map((task) => {
-                  const taskMeta = taskStatusMeta[task.status];
-                  return (
-                    <div key={task.id}>
-                      <span className={`task-check ${task.status}`}><OfficeIcon name={taskMeta.icon} size={14} /></span>
-                      <div><strong>{task.title}</strong><p>{formatTaskDetail(task, '任务详情待补充')}</p><small>{formatAgentName(task.agent_id)} · {formatTime(task.time)}</small></div>
-                      <em className={`task-status ${task.status}`}>{taskMeta.label}</em>
-                    </div>
-                  );
-                })}
-              </div>
-            ) : <div className="workspace-empty"><OfficeIcon name="agent" size={18} /><span>当前空间成员暂无可展示的真实任务</span></div>}
-          </div>
-
-          <div className="workspace-expert-card">
-            <div className="workspace-section-heading"><div><span>Expert Team</span><h3>空间内专家团</h3></div><small>仅投递给当前空间成员</small></div>
-
-            {/* 模式切换 */}
-            <div className="workspace-mode-toggle">
-              <button
-                type="button"
-                className={pipelineMode === 'parallel' ? 'active' : ''}
-                onClick={() => setPipelineMode('parallel')}
-              >⚡ 快速评审</button>
-              <button
-                type="button"
-                className={pipelineMode === 'serial' ? 'active' : ''}
-                onClick={() => setPipelineMode('serial')}
-              >🔬 深度分析</button>
-            </div>
-
-            <textarea value={question} onChange={(event) => setQuestion(event.target.value)} placeholder={`向“${selectedWorkspace.name}”成员提问`} aria-label="空间内专家团问题" />
-
-            {pipelineMode === 'serial' && pipelineSubmitting ? (
-              <div className="pipeline-job-status" role="status">
-                <OfficeIcon name="clock" size={15} />
-                <span>后台流水线已提交，正在等待专家回执{pipelineResult?.batch_id ? ` · ${pipelineResult.batch_id}` : ''}</span>
-              </div>
-            ) : null}
-            {pipelineMode === 'serial' && pipelineResult?.status === 'failed' && pipelineResult.synthesize_error ? (
-              <div className="pipeline-job-status error" role="alert">
-                <OfficeIcon name="alert" size={15} />
-                <span>专家流水线失败：{pipelineResult.synthesize_error}</span>
-              </div>
-            ) : null}
-
-            {/* 串行模式进度条 */}
-            {pipelineMode === 'serial' && pipelineSteps.length > 0 && (
-              <div className="pipeline-progress">
-                {pipelineSteps.map((step, i) => (
-                  <div key={i} className={`pipeline-step ${step.status}`}>
-                    <span className="step-icon">
-                      {step.status === 'done' ? '✅' : step.status === 'running' ? '⏳' : step.status === 'error' ? '❌' : step.status === 'offline' ? '🚫' : step.status === 'skipped' ? '⏭️' : '⭕'}
-                    </span>
-                    <span className="step-agent">
-                      {step.agent_id === 'default' ? '小黑' : step.agent_id === 'media-ops' ? '小橙' : '小金'}
-                    </span>
-                    {step.response_preview && <p className="step-preview">{step.response_preview}</p>}
-                    {step.error && <p className="step-error">⚠️ {step.error}</p>}
-                    {step.reason && <p className="step-reason">{step.reason}</p>}
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {/* 串行模式最终报告 */}
-            {pipelineMode === 'serial' && pipelineResult && pipelineResult.final_report && (
-              <div className="pipeline-final-report">
-                <div className="pipeline-report-heading">
-                  <OfficeIcon name="workspace" size={16} />
-                  <span>深度分析报告</span>
+      <div className="section-heading"><div><p className="section-kicker">Ingest Trend</p><h2>近 7 天入库</h2></div><span>按文件修改时间统计</span></div>
+      <div className="archive-card trend-card">
+        {trend.length === 0 ? <p className="archive-empty">暂无入库记录。</p> : (
+          <div className="trend-chart" aria-label="近七天知识入库趋势">
+            {trend.map((item) => (
+              <div className="trend-column" key={item.date}>
+                <span>{item.files_added}</span>
+                <div className="trend-bar">
+                  <i className="trend-skill" style={{ height: `${(item.files_added / trendMaximum) * 100}%` }} />
                 </div>
-                <div className="pipeline-report-content">{pipelineResult.final_report}</div>
+                <small>{item.date.slice(5)}</small>
               </div>
-            )}
-
-            <button
-              className="workspace-primary-button"
-              type="button"
-              onClick={() => void handleSubmit()}
-              disabled={submitting || !question.trim() || (pipelineMode === 'serial' && pipelineSubmitting)}
-            >
-              <OfficeIcon name="send" size={16} />
-              {pipelineMode === 'serial'
-                ? (pipelineSubmitting ? '深度分析中…' : '🔬 启动深度分析')
-                : (submitting ? '正在投递…' : `投递给 ${selectedWorkspace.memberIds.length} 位成员`)}
-            </button>
-
-            {/* 并行模式投递结果 */}
-            {pipelineMode === 'parallel' && deliveryResults.length > 0 ? (
-              <div className="expert-delivery-results" aria-live="polite">
-                {deliveryResults.map((result) => (
-                  <div key={result.agentId} className={result.status}>
-                    <span><OfficeIcon name={result.status === 'delivered' ? 'check' : result.status === 'queued' ? 'database' : 'alert'} size={15} /></span>
-                    <div><strong>{formatAgentName(result.agentId)}</strong><small>{result.status === 'delivered' ? '已发送到 Hermes' : result.status === 'queued' ? '已入队兜底' : '投递失败'}</small></div>
-                  </div>
-                ))}
-              </div>
-            ) : null}
+            ))}
           </div>
+        )}
+      </div>
 
-          <div className="workspace-receipt-card">
-            <div className="workspace-section-heading"><div><span>Expert Receipts</span><h3>专家团回执</h3></div><small>仅展示真实回执预览，不生成专家结论</small></div>
-            {latestExpertBatch.length > 0 ? (
-              <div className="workspace-receipt-list">
-                {latestExpertBatch.map((log) => {
-                  const matchedRecord = [...workspaceActivity.sent, ...workspaceActivity.outbox].find((record) => (
-                    record.agent_id === log.targetAgentId
-                    && (log.batchId ? record.message_preview.includes(log.batchId) : record.message_preview.includes(log.title))
-                  ));
-                  const status = matchedRecord?.status ?? log.status;
-                  const responsePreview = matchedRecord?.response_preview || log.responsePreview;
-                  return (
-                    <div className={status} key={log.id}>
-                      <div className="workspace-receipt-head">
-                        <span><OfficeIcon name={status === 'delivered' ? 'check' : status === 'queued' ? 'database' : 'alert'} size={15} /></span>
-                        <div><strong>{formatAgentName(log.targetAgentId)}</strong><small>{status === 'delivered' ? '已发送' : status === 'queued' ? '待补投' : '失败'} · {formatTime(matchedRecord?.time || log.createdAt)}</small></div>
-                      </div>
-                      <p className="workspace-receipt-question">{log.title}</p>
-                      <div className="workspace-response-preview"><span>回执预览</span><p>{responsePreview || (status === 'queued' ? '尚未送达，暂无真实回执。' : status === 'failed' ? '投递失败，暂无真实回执。' : '已发送，但当前记录没有 response_preview。')}</p></div>
-                    </div>
-                  );
-                })}
-              </div>
-            ) : <div className="workspace-empty"><OfficeIcon name="agent" size={18} /><span>本空间还没有可关联的专家团回执</span></div>}
+      <div className="section-heading"><div><p className="section-kicker">Recent Commits</p><h2>最近提交</h2></div><span>{commits.length ? `${commits.length} 条真实记录` : '待记录'}</span></div>
+      <div className="archive-card milestone-card">
+        {commits.length === 0 ? <p className="archive-empty">暂无提交记录。</p> : commits.map((commit) => (
+          <div className="milestone-event" key={commit.id}>
+            <div className="milestone-rail"><span><OfficeIcon name="terminal" size={15} /></span><i /></div>
+            <div><strong>{commit.title}</strong><time>{formatTime(commit.date)}</time></div>
           </div>
-
-          <div className="workspace-log-card">
-            <div className="workspace-section-heading"><div><span>Workspace Log</span><h3>空间日志</h3></div><small>仅记录发起，不代表执行完成</small></div>
-            {selectedWorkspace.logs.length > 0 ? (
-              <div className="workspace-log-list">
-                {selectedWorkspace.logs.map((log) => (
-                  <div key={log.id}>
-                    <span className={`workspace-log-icon ${log.status}`}><OfficeIcon name={log.type === 'dispatch' ? 'send' : 'agent'} size={14} /></span>
-                    <div><strong>{log.title}</strong><p>{log.type === 'dispatch' ? '空间派活' : '专家团投递'} · {formatAgentName(log.targetAgentId)}</p><small>{formatTime(log.createdAt)}</small></div>
-                    <em className={`workspace-log-status ${log.status}`}>{log.status === 'delivered' ? '已发送' : log.status === 'queued' ? '待补投' : '失败'}</em>
-                  </div>
-                ))}
-              </div>
-            ) : <div className="workspace-empty"><OfficeIcon name="activity" size={18} /><span>本空间还没有派活或专家团投递记录</span></div>}
-          </div>
-        </>
-      ) : null}
+        ))}
+      </div>
     </section>
   );
 }
 
-function ActivityPage({ tasks, outbox, onExpertPanelSubmit, onRetryOutbox, retryStatus, retrying, autoRetryEnabled, autoRetryReport, onToggleAutoRetry, onSelectAgent }: { tasks: TaskItem[]; outbox: OutboxData; onExpertPanelSubmit: (question: string) => Promise<ExpertDeliveryResult[]>; onRetryOutbox: () => void; retryStatus: string; retrying: boolean; autoRetryEnabled: boolean; autoRetryReport: AutoRetryReport; onToggleAutoRetry: () => void; onSelectAgent: (agentId: string) => void }) {
-  const [filter, setFilter] = useState<TaskFilter>('all');
-  const [selectedTask, setSelectedTask] = useState<TaskItem | null>(null);
-  const [expertQuestion, setExpertQuestion] = useState('');
-  const [expertSubmitting, setExpertSubmitting] = useState(false);
-  const [expertResults, setExpertResults] = useState<ExpertDeliveryResult[]>([]);
-  const [delegationData, setDelegationData] = useState<{ delegation_id: string; available: boolean; tasks: Array<{ index: number; goal: string; status: string; log_summary: string }> } | null>(null);
-  const [delegationLoading, setDelegationLoading] = useState(false);
-  const runningCount = tasks.filter((task) => task.status === 'running').length;
-  const blockedCount = tasks.filter((task) => task.status === 'blocked').length;
-  const completedCount = tasks.filter((task) => task.status === 'completed').length;
-  const queuedCount = tasks.filter((task) => task.status === 'queued').length;
-  const filteredTasks = tasks.filter((task) => {
-    if (filter === 'all') return true;
-    if (filter === 'interrupted') return task.status === 'failed' || task.status === 'paused';
-    return task.status === filter;
-  });
-  const selectedTaskMeta = selectedTask ? taskStatusMeta[selectedTask.status] : null;
-  const selectedTaskCanRetry = selectedTask
-    ? selectedTask.source === 'outbox' || selectedTask.status === 'queued' || selectedTask.status === 'failed' || selectedTask.status === 'paused'
-    : false;
-  const blockedTasks = tasks.filter((task) => task.status === 'blocked');
-  const primaryBlockedTask = blockedTasks[0];
+function formatTokens(value: number): string {
+  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`;
+  if (value >= 1_000) return `${(value / 1_000).toFixed(0)}K`;
+  return String(value);
+}
 
-  // Fetch delegation tasks when selected task has a delegation_id
-  useEffect(() => {
-    const task = selectedTask;
-    const did = task?.delegation_id;
-    if (!did) {
-      setDelegationData(null);
-      return;
-    }
-    let active = true;
-    setDelegationLoading(true);
-    setDelegationData(null);
-    fetchDelegationTasks(did)
-      .then((res) => { if (active) setDelegationData(res.data); })
-      .catch(() => { if (active) setDelegationData(null); })
-      .finally(() => { if (active) setDelegationLoading(false); });
-    return () => { active = false; };
-  }, [selectedTask?.delegation_id]);
+function CostPage({ usageTrend, tokenUsage, resourceState, onRetry }: { usageTrend: UsageTrendData; tokenUsage: TokenUsageData; resourceState: ResourceState; onRetry: () => void }) {
+  const days = (usageTrend.days ?? []).map((day) => ({
+    ...day,
+    totalTokens: (day.input_tokens ?? 0) + (day.output_tokens ?? 0),
+  }));
+  const maxDailyTokens = Math.max(...days.map((day) => day.totalTokens), 1);
+  const totalCalls = usageTrend.total_calls ?? 0;
+  const todayInputTokens = tokenUsage.total?.input_tokens ?? 0;
+  const todayOutputTokens = tokenUsage.total?.output_tokens ?? 0;
+  const todayTotalTokens = tokenUsage.total?.total_tokens ?? (todayInputTokens + todayOutputTokens);
+  const byModel = (tokenUsage.by_model ?? [])
+    .map((item) => ({
+      ...item,
+      totalTokens: (item.input_tokens ?? 0) + (item.output_tokens ?? 0),
+    }))
+    .sort((left, right) => right.totalTokens - left.totalTokens);
+  const modelTokenTotal = Math.max(todayTotalTokens, 1);
 
-  function handleTaskAgentJump(task: TaskItem) {
-    if (!task.agent_id) return;
-    onSelectAgent(task.agent_id);
-  }
-
-  async function handleExpertSubmit() {
-    const question = expertQuestion.trim();
-    if (!question || expertSubmitting) return;
-    setExpertSubmitting(true);
-    setExpertResults([]);
-    try {
-      setExpertResults(await onExpertPanelSubmit(question));
-    } finally {
-      setExpertSubmitting(false);
-    }
+  if (resourceState.status !== 'success') {
+    return <section className="page-section cost-page"><ResourceStateCard state={resourceState} onRetry={onRetry} label="成本统计" /></section>;
   }
 
   return (
-    <section className="page-section activity-page">
-      <div className="task-header">
-        <div><p className="eyebrow">Task Board</p><h1>任务动态</h1><span>移动任务清单与投递状态</span></div>
-        <div className="task-header-icon"><OfficeIcon name="activity" size={23} /></div>
-      </div>
-      <div className="task-stats">
-        <div><span className="task-stat-icon running"><OfficeIcon name="clock" size={16} /></span><strong>{runningCount}</strong><small>进行中</small></div>
-        <div><span className="task-stat-icon blocked"><OfficeIcon name="alert" size={16} /></span><strong>{blockedCount}</strong><small>阻塞</small></div>
-        <div><span className="task-stat-icon completed"><OfficeIcon name="check" size={16} /></span><strong>{completedCount}</strong><small>已完成</small></div>
-        <div><span className="task-stat-icon pending"><OfficeIcon name="database" size={16} /></span><strong>{queuedCount}</strong><small>待补投</small></div>
-      </div>
-      {primaryBlockedTask ? (
-        <div className="blocked-alert-card" role="status">
-          <div className="blocked-alert-icon"><OfficeIcon name="alert" size={18} /></div>
-          <div>
-            <strong>{blockedTasks.length > 1 ? `${blockedTasks.length} 个阻塞等待处理` : '有 1 个阻塞等待处理'}</strong>
-            <p>{primaryBlockedTask.title}</p>
-            <small>{formatTaskDetail(primaryBlockedTask, '等待补充阻塞原因')}</small>
-          </div>
-          <button type="button" onClick={() => {
-            setFilter('blocked');
-            setSelectedTask(primaryBlockedTask);
-          }}>查看</button>
-          {primaryBlockedTask.agent_id ? (
-            <button type="button" onClick={() => handleTaskAgentJump(primaryBlockedTask)}>找{formatAgentName(primaryBlockedTask.agent_id)}</button>
-          ) : null}
+    <section className="page-section cost-page">
+      <div className="growth-hero">
+        <div className="growth-hero-heading">
+          <div className="overview-mark"><OfficeIcon name="activity" size={24} /></div>
+          <div><p className="eyebrow">Token Usage</p><h1>成本中心</h1></div>
         </div>
-      ) : null}
+        <p>Token 消耗与节省统计，数据来自 Hermes state.db 真实记录 · 近 14 天 {totalCalls} 次调用。</p>
+        <div className="growth-summary">
+          <div><strong>{formatTokens(todayTotalTokens)}</strong><span>今日总 Token</span></div>
+          <div><strong>{formatTokens(todayInputTokens)}</strong><span>今日输入</span></div>
+          <div><strong>{formatTokens(todayOutputTokens)}</strong><span>今日输出</span></div>
+          <div><strong>{formatTokens(tokenUsage.total?.cache_read_tokens ?? 0)}</strong><span>今日缓存命中</span></div>
+        </div>
+      </div>
 
-      <div className="expert-panel">
-        <div className="expert-panel-heading">
-          <div className="expert-panel-icon"><OfficeIcon name="agent" size={20} /></div>
-          <div><p>专家团</p><strong>默认召集三位专家共同执行</strong><small>本页仅展示投递结果，真实回答由 Hermes 通道或兜底队列承接</small></div>
-        </div>
-        <div className="expert-chips" aria-label="默认召集的专家">
-          {expertPanelAgents.map((expert) => (
-            <span key={expert.id} className={`expert-chip ${expert.id}`}>
-              <i />
-              <strong>{expert.name}</strong>
-              <small>{expert.perspective}</small>
-            </span>
-          ))}
-        </div>
-        <textarea
-          value={expertQuestion}
-          onChange={(event) => setExpertQuestion(event.target.value)}
-          placeholder="输入需要专家团共同判断或执行的问题"
-          aria-label="专家团问题"
-        />
-        <button className="expert-submit" type="button" onClick={() => void handleExpertSubmit()} disabled={expertSubmitting || !expertQuestion.trim()}>
-          <OfficeIcon name="send" size={16} />
-          {expertSubmitting ? '正在召集…' : '召集专家团'}
-        </button>
-        {expertResults.length > 0 ? (
-          <div className="expert-delivery-results" aria-live="polite">
-            {expertResults.map((result) => (
-              <div key={result.agentId} className={result.status}>
-                <span><OfficeIcon name={result.status === 'delivered' ? 'check' : result.status === 'queued' ? 'database' : 'alert'} size={15} /></span>
-                <div><strong>{formatAgentName(result.agentId)}</strong><small>{result.status === 'delivered' ? '已发送到 Hermes' : result.status === 'queued' ? '已入队兜底' : '失败'}</small></div>
+      <div className="section-heading"><div><p className="section-kicker">Usage Trend</p><h2>近 14 天 Token 趋势</h2></div><span>输入 + 输出</span></div>
+      <div className="archive-card trend-card">
+        {days.length === 0 ? <p className="archive-empty">暂无用量记录。</p> : (
+          <div className="trend-chart" aria-label="近十四天 Token 用量趋势">
+            {days.map((day) => (
+              <div className="trend-column" key={day.date}>
+                <span>{formatTokens(day.totalTokens)}</span>
+                <div className="trend-bar">
+                  <i className="trend-skill" style={{ height: `${(day.totalTokens / maxDailyTokens) * 100}%` }} />
+                </div>
+                <small>{day.date.slice(5)}</small>
               </div>
             ))}
           </div>
-        ) : null}
+        )}
       </div>
 
-      <div className="outbox-card">
-        <div className="outbox-main">
-          <div className="outbox-icon"><OfficeIcon name="database" size={20} /></div>
-          <div><p>兜底队列</p><strong>{outbox.count} 条任务待补投</strong><small>{retryStatus || (outbox.stale_count ? outbox.stale_count + ' 条消息超过 ' + (outbox.stale_after_hours ?? 48) + ' 小时，默认不会自动重试' : 'Hermes 通道恢复后可逐条重试')}</small></div>
-          <button className="mini-button" onClick={onRetryOutbox} disabled={retrying || outbox.count === 0}>
-            <OfficeIcon name="refresh" size={15} />
-            {retrying ? '重试中…' : '逐条重试'}
-          </button>
-        </div>
-        <div className="outbox-auto">
-          <div className="outbox-auto-heading">
-            <div className={`outbox-auto-icon ${autoRetryEnabled ? 'running' : autoRetryReport.completed ? 'completed' : ''}`}>
-              <OfficeIcon name={autoRetryEnabled ? 'refresh' : autoRetryReport.completed ? 'check' : 'clock'} size={17} />
-            </div>
-            <div className="outbox-auto-copy">
-              <strong>自动补投</strong>
-              <small>每 60 秒仅补投 1 条，默认关闭，仅当前任务页会话</small>
-            </div>
-            <button
-              className={`safe-switch ${autoRetryEnabled ? 'enabled' : ''}`}
-              type="button"
-              role="switch"
-              aria-checked={autoRetryEnabled}
-              aria-label="自动补投"
-              onClick={onToggleAutoRetry}
-              disabled={outbox.count === 0 && !autoRetryEnabled}
-            >
-              <span />
-            </button>
-          </div>
-          <div className="outbox-auto-status">
-            <div><span>状态</span><strong>{autoRetryEnabled ? '运行中' : autoRetryReport.completed ? '已完成' : '关闭'}</strong></div>
-            <div><span>最近一次尝试</span><strong>{formatAttemptTime(autoRetryReport.lastAttemptAt)}</strong></div>
-          </div>
-          {autoRetryReport.delivered !== null && autoRetryReport.remaining !== null && !autoRetryReport.error ? (
-            <div className="outbox-auto-result success"><OfficeIcon name="check" size={14} /><span>最近一次成功 {autoRetryReport.delivered} 条，剩余 {autoRetryReport.remaining} 条</span></div>
-          ) : null}
-          {autoRetryReport.error ? (
-            <div className="outbox-auto-result error">
-              <OfficeIcon name="alert" size={14} />
-              <div><span>补投失败：{formatIssueReason(autoRetryReport.error)}</span>{isIssueCode(autoRetryReport.error) ? <small>{formatTechnicalMeta([`原始原因 ${autoRetryReport.error}`])}</small> : null}</div>
-            </div>
-          ) : null}
-        </div>
-        {outbox.items.length > 0 && <div className="outbox-preview">
-          {outbox.items.slice(-3).reverse().map((item) => (
-            <div key={item.id}>
-              <strong>{formatAgentName(item.agent_id)}</strong>
-              <span>{item.message_preview}</span>
-              <small>{item.fallback_reason ? formatIssueReason(item.fallback_reason) : '等待投递'} · {formatTechnicalMeta([`员工标识 ${item.agent_id}`, item.fallback_reason ? `原始原因 ${item.fallback_reason}` : null])}</small>
-            </div>
-          ))}
-        </div>}
-      </div>
-
-      <div className="task-filter-chips" aria-label="任务状态筛选">
-        {taskFilters.map((item) => <button key={item.key} className={filter === item.key ? 'selected' : ''} onClick={() => setFilter(item.key)}>{item.label}</button>)}
-      </div>
-
-      <div className="section-heading"><div><p className="section-kicker">Unified History</p><h2>统一任务历史</h2></div><span>{filteredTasks.length} 项</span></div>
-      {selectedTask && selectedTaskMeta ? (
-        <aside className="task-detail-panel" id="task-detail-panel" aria-label="任务详情">
-          <div className="task-detail-heading">
-            <div className={`task-check ${selectedTask.status}`}><OfficeIcon name={selectedTaskMeta.icon} size={17} /></div>
-            <div>
-              <p>任务详情</p>
-              <strong>{selectedTask.title}</strong>
-            </div>
-            <button className="task-detail-close" type="button" onClick={() => setSelectedTask(null)} aria-label="关闭任务详情">关闭</button>
-          </div>
-          <div className="task-detail-grid">
-            <div><span>状态</span><strong className={`task-status ${selectedTask.status}`}>{selectedTaskMeta.label}</strong></div>
-            <div><span>来源</span><strong>{taskSourceLabels[selectedTask.source] ?? selectedTask.source}</strong></div>
-            <div><span>员工</span><strong>{selectedTask.agent_id ? formatAgentName(selectedTask.agent_id) : '未指定'}</strong></div>
-            <div><span>时间</span><strong>{formatTime(selectedTask.time)}</strong></div>
-          </div>
-          <div className="task-detail-section">
-            <span>任务详情</span>
-            <p>{selectedTask.detail ? formatIssueReason(selectedTask.detail) : '暂无任务详情'}</p>
-          </div>
-          <div className="task-detail-section">
-            <span>业务化失败原因</span>
-            <p>{selectedTask.fallback_reason ? formatIssueReason(selectedTask.fallback_reason) : '未记录失败原因'}</p>
-          </div>
-          <div className="task-detail-section technical">
-            <span>技术信息</span>
-            <p>{formatTaskTechnicalMeta(selectedTask) || '暂无技术信息'}</p>
-          </div>
-          {selectedTask.source === 'kanban' ? (
-            <div className="task-detail-section">
-              <span>智能看板</span>
-              <p>
-                {[
-                  selectedTask.kanban_id ? `看板ID ${selectedTask.kanban_id}` : null,
-                  selectedTask.kanban_status ? `原始状态 ${selectedTask.kanban_status}` : null,
-                  selectedTask.status === 'blocked' && selectedTask.fallback_reason
-                    ? `阻塞原因 ${formatIssueReason(selectedTask.fallback_reason)}`
-                    : null,
-                  selectedTask.latest_comment ? `最近评论 ${selectedTask.latest_comment}` : null,
-                  selectedTask.heartbeat_at ? `心跳 ${formatTime(selectedTask.heartbeat_at)}` : null,
-                  selectedTask.session_id ? `会话 ${selectedTask.session_id}` : null,
-                  selectedTask.block_kind ? `阻塞类型 ${selectedTask.block_kind}` : null,
-                  selectedTask.priority != null && selectedTask.priority !== ''
-                    ? `优先级 ${selectedTask.priority}`
-                    : null,
-                ].filter(Boolean).join(' · ') || '暂无看板附加信息'}
-              </p>
-              {selectedTask.agent_id ? (
-                <button className="task-agent-jump" type="button" onClick={() => handleTaskAgentJump(selectedTask)}>
-                  <OfficeIcon name="agent" size={15} />
-                  去找{formatAgentName(selectedTask.agent_id)}处理
-                </button>
-              ) : null}
-            </div>
-          ) : null}
-          <div className="task-detail-id"><span>任务 ID</span><code>{selectedTask.id}</code></div>
-          {selectedTaskCanRetry ? (
-            <div className="task-detail-retry">
-              <div><strong>可通过兜底队列逐条重试</strong><small>每次仅尝试补投 1 条现有队列任务</small></div>
-              <button className="mini-button" type="button" onClick={onRetryOutbox} disabled={retrying || outbox.count === 0}>
-                <OfficeIcon name="refresh" size={15} />
-                {retrying ? '重试中…' : '逐条重试'}
-              </button>
-            </div>
-          ) : null}
-          {delegationData && delegationData.tasks.length > 0 ? (
-            <div className="delegation-section">
-              <div className="delegation-section-heading">
-                <OfficeIcon name="agent" size={15} />
-                <span>子任务进度</span>
-                <span className="delegation-id">{delegationData.delegation_id}</span>
-              </div>
-              {delegationData.tasks.map((task) => (
-                <div className="delegation-task-item" key={task.index}>
-                  <div className="delegation-task-row">
-                    <span className={`delegation-dot ${task.status}`} />
-                    <strong>{task.status === 'running' ? '进行中' : task.status === 'completed' ? '已完成' : task.status}</strong>
-                    {task.goal && <span className="delegation-goal" title={task.goal}>{task.goal.length > 60 ? task.goal.slice(0, 60) + '…' : task.goal}</span>}
+      <div className="section-heading"><div><p className="section-kicker">By Model</p><h2>今日模型用量</h2></div><span>按模型拆分</span></div>
+      <div className="archive-card model-usage-card">
+        {byModel.length === 0 ? <p className="archive-empty">暂无模型用量。</p> : (
+          <div className="model-usage-list">
+            {byModel.map((item) => (
+              <div className="model-usage-item" key={`${item.model}-${item.provider}`}>
+                <div className="model-usage-head">
+                  <div>
+                    <strong>{item.model}</strong>
+                    <small>{item.provider ?? 'unknown'} · {item.api_calls ?? 0} 次调用 · 缓存命中 {formatTokens(item.cache_read_tokens ?? 0)}</small>
                   </div>
-                  {task.log_summary ? (
-                    <p className="delegation-log">{task.log_summary}</p>
-                  ) : null}
-                  {task.status === 'running' && selectedTask?.agent_id ? (
-                    <a
-                      href={`/?view=agent&id=${selectedTask.agent_id}`}
-                      className="delegation-jump-link"
-                      onClick={(e) => { e.preventDefault(); onSelectAgent(selectedTask.agent_id!); }}
-                    >
-                      <OfficeIcon name="agent" size={13} />
-                      跳转查看详情
-                    </a>
-                  ) : null}
+                  <span><strong>{formatTokens(item.totalTokens)}</strong><small>Token</small></span>
                 </div>
-              ))}
-            </div>
-          ) : delegationLoading && selectedTask?.delegation_id ? (
-            <div className="delegation-section loading">
-              <div className="delegation-loading-row">
-                <OfficeIcon name="clock" size={14} />
-                <span>正在加载子任务状态…</span>
+                <div className="model-usage-bar" aria-label={`${item.model} 占今日 Token ${Math.round((item.totalTokens / modelTokenTotal) * 100)}%`}>
+                  <i style={{ width: `${Math.min((item.totalTokens / modelTokenTotal) * 100, 100)}%` }} />
+                </div>
               </div>
-            </div>
-          ) : null}
-        </aside>
-      ) : null}
-      <div className="task-card-list">
-        {filteredTasks.length === 0 ? <div className="empty-card">当前筛选下暂无任务。</div> : filteredTasks.map((task) => {
-          const meta = taskStatusMeta[task.status];
-          return <button
-            className={`task-card ${selectedTask?.id === task.id ? 'selected' : ''}`}
-            key={task.id}
-            type="button"
-            onClick={() => setSelectedTask(task)}
-            aria-expanded={selectedTask?.id === task.id}
-            aria-controls="task-detail-panel"
-          >
-            <div className={`task-check ${task.status}`}><OfficeIcon name={meta.icon} size={16} /></div>
-            <div className="task-card-content">
-              <div><strong>{task.title}</strong><span className={`task-status ${task.status}`}>{meta.label}</span></div>
-              <p>{formatTaskDetail(task, '暂无任务详情')}</p>
-              <small>{taskSourceLabels[task.source] ?? task.source}{task.agent_id ? ` · ${formatAgentName(task.agent_id)}` : ''} · {formatTime(task.time)}{formatTaskTechnicalMeta(task) ? ` · ${formatTaskTechnicalMeta(task)}` : ''}</small>
-            </div>
-            <OfficeIcon name="chevron" size={17} className="task-chevron" />
-          </button>;
-        })}
+            ))}
+          </div>
+        )}
       </div>
     </section>
   );
@@ -1809,13 +1098,15 @@ export default function App() {
     return params.get('id') || 'default';
   });
   const [evolution, setEvolution] = useState<EvolutionData>({});
+  const [growth, setGrowth] = useState<GrowthData>(initialGrowth);
+  const [knowledge, setKnowledge] = useState<KnowledgeData>(initialKnowledge);
+  const [usageTrend, setUsageTrend] = useState<UsageTrendData>(initialUsageTrend);
+  const [tokenUsage, setTokenUsage] = useState<TokenUsageData>(initialTokenUsage);
+  const [growthState, setGrowthState] = useState<ResourceState>(initialResourceState);
+  const [knowledgeState, setKnowledgeState] = useState<ResourceState>(initialResourceState);
+  const [costState, setCostState] = useState<ResourceState>(initialResourceState);
   const [tasks, setTasks] = useState<TaskItem[]>([]);
-  const [outbox, setOutbox] = useState<OutboxData>({ count: 0, items: [] });
   const [channels, setChannels] = useState<ChannelHealth[]>([]);
-  const [retrying, setRetrying] = useState(false);
-  const [retryStatus, setRetryStatus] = useState('');
-  const [autoRetryEnabled, setAutoRetryEnabled] = useState(false);
-  const [autoRetryReport, setAutoRetryReport] = useState<AutoRetryReport>({ completed: false, lastAttemptAt: null, delivered: null, remaining: null, error: '' });
   const [offline, setOffline] = useState(false);
   const [session, setSession] = useState<SessionData | null>(null);
   const [sessionLoading, setSessionLoading] = useState(true);
@@ -1826,7 +1117,6 @@ export default function App() {
   const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null);
   const [installed, setInstalled] = useState(() => window.matchMedia('(display-mode: standalone)').matches || Boolean((navigator as Navigator & { standalone?: boolean }).standalone));
   const [cameFromOffice, setCameFromOffice] = useState(false);
-  const retryingRef = useRef(false);
 
   useEffect(() => {
     fetchSession()
@@ -1838,13 +1128,65 @@ export default function App() {
       .finally(() => setSessionLoading(false));
   }, []);
 
+  async function loadGrowth() {
+    setGrowthState({ status: 'loading' });
+    try {
+      const result = await fetchGrowth();
+      if (result.offline) {
+        setGrowthState({ status: 'error', error: result.error });
+        return;
+      }
+      setGrowth(result.data);
+      setGrowthState({ status: 'success' });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '网络请求失败';
+      setGrowthState({ status: 'error', error: message });
+      if (/登录|权限/.test(message)) setAuthError(message);
+    }
+  }
+
+  async function loadKnowledge() {
+    setKnowledgeState({ status: 'loading' });
+    try {
+      const result = await fetchKnowledge();
+      if (result.offline) {
+        setKnowledgeState({ status: 'error', error: result.error });
+        return;
+      }
+      setKnowledge(result.data);
+      setKnowledgeState({ status: 'success' });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '网络请求失败';
+      setKnowledgeState({ status: 'error', error: message });
+      if (/登录|权限/.test(message)) setAuthError(message);
+    }
+  }
+
+  async function loadCost() {
+    setCostState({ status: 'loading' });
+    try {
+      const [usageResult, tokenResult] = await Promise.all([fetchUsageTrend(), fetchTokenUsage()]);
+      if (usageResult.offline || tokenResult.offline) {
+        setCostState({ status: 'error', error: usageResult.error || tokenResult.error });
+        return;
+      }
+      setUsageTrend(usageResult.data);
+      setTokenUsage(tokenResult.data);
+      setCostState({ status: 'success' });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '网络请求失败';
+      setCostState({ status: 'error', error: message });
+      if (/登录|权限/.test(message)) setAuthError(message);
+    }
+  }
+
   useEffect(() => {
     if (!session?.authenticated) {
       setLoading(false);
       return;
     }
     setLoading(true);
-    Promise.all([fetchAgents(), fetchEvolution(), fetchTasks(), fetchOutbox()]).then(([agentRes, evolutionRes, taskRes, outboxRes]) => {
+    Promise.all([fetchHealth(), fetchAgents(), fetchEvolution(), fetchTasks(), loadGrowth(), loadKnowledge(), loadCost()]).then(([healthRes, agentRes, evolutionRes, taskRes]) => {
       setAgents(agentRes.data.agents);
       setSelectedId((current) => (
         current && agentRes.data.agents.some((agent) => agent.id === current)
@@ -1853,10 +1195,8 @@ export default function App() {
       ));
       setEvolution(evolutionRes.data);
       setTasks(taskRes.data.items ?? []);
-      setOutbox(outboxRes.data);
-      setOffline(agentRes.offline || evolutionRes.offline || taskRes.offline || outboxRes.offline);
+      setOffline(healthRes.offline);
     }).catch((error) => {
-      setOffline(true);
       if (error instanceof Error && /登录|权限/.test(error.message)) setAuthError(error.message);
     }).finally(() => setLoading(false));
   }, [session?.authenticated]);
@@ -1903,146 +1243,10 @@ export default function App() {
 
   const selectedAgent = useMemo(() => agents.find((agent) => agent.id === selectedId) ?? agents[0], [agents, selectedId]);
 
-  async function handleExpertPanelSubmit(question: string) {
-    const deliveryResults = await Promise.allSettled(expertPanelAgents.map(async (expert) => {
-      const message = `你正在参与“专家团执行”协作。你的角色是${expert.name}，负责${expert.perspective}。${expert.prompt}\n\n用户问题：\n${question}`;
-      return sendMessage(expert.id, message);
-    }));
-    const results = deliveryResults.map<ExpertDeliveryResult>((result, index) => {
-      const agentId = expertPanelAgents[index].id;
-      if (result.status === 'rejected') {
-        return { agentId, status: 'failed', error: result.reason instanceof Error ? result.reason.message : '发送失败' };
-      }
-      if (result.value.delivered) return { agentId, status: 'delivered', responsePreview: result.value.response_preview };
-      if (result.value.queued) return { agentId, status: 'queued' };
-      return { agentId, status: 'failed', error: result.value.error || result.value.fallback_reason || '发送失败' };
-    });
-    const [refreshedOutbox, refreshedTasks] = await Promise.all([fetchOutbox(), fetchTasks()]);
-    setOutbox(refreshedOutbox.data);
-    setTasks(refreshedTasks.data.items ?? []);
-    return results;
-  }
 
-  async function handleWorkspaceExpertSubmit(memberIds: ExpertAgentId[], workspaceName: string, goal: string, question: string, batchId: string) {
-    const deliveryResults = await Promise.allSettled(memberIds.map(async (agentId) => {
-      const expert = expertPanelAgents.find((item) => item.id === agentId);
-      const message = `你正在参与工作空间“${workspaceName}”的专家协作。\n空间名称：${workspaceName}\n投递批次：${batchId}\n空间目标：${goal}\n成员角色视角：${expert?.name ?? formatAgentName(agentId)} · ${expert?.perspective ?? '空间成员视角'}。${expert?.prompt ?? ''}\n\n用户问题：\n${question}`;
-      return sendMessage(agentId, message);
-    }));
-    const results = deliveryResults.map<ExpertDeliveryResult>((result, index) => {
-      const agentId = memberIds[index];
-      if (result.status === 'rejected') {
-        return { agentId, status: 'failed', error: result.reason instanceof Error ? result.reason.message : '发送失败' };
-      }
-      if (result.value.delivered) return { agentId, status: 'delivered', responsePreview: result.value.response_preview };
-      if (result.value.queued) return { agentId, status: 'queued' };
-      return { agentId, status: 'failed', error: result.value.error || result.value.fallback_reason || '发送失败' };
-    });
-    const [refreshedOutbox, refreshedTasks] = await Promise.all([fetchOutbox(), fetchTasks()]);
-    setOutbox(refreshedOutbox.data);
-    setTasks(refreshedTasks.data.items ?? []);
-    return results;
-  }
 
-  async function handleWorkspaceDispatch(agentId: ExpertAgentId, workspaceName: string, goal: string, task: string) {
-    const expert = expertPanelAgents.find((item) => item.id === agentId);
-    const message = `你收到来自工作空间“${workspaceName}”的单人派活。\n空间名称：${workspaceName}\n项目目标：${goal}\n目标成员角色视角：${expert?.name ?? formatAgentName(agentId)} · ${expert?.perspective ?? '空间成员视角'}。${expert?.prompt ?? ''}\n\n任务内容：\n${task}`;
-    let result: ExpertDeliveryResult;
-    try {
-      const response = await sendMessage(agentId, message);
-      if (response.delivered) result = { agentId, status: 'delivered', responsePreview: response.response_preview };
-      else if (response.queued) result = { agentId, status: 'queued' };
-      else result = { agentId, status: 'failed', error: response.error || response.fallback_reason || '发送失败' };
-    } catch (error) {
-      result = { agentId, status: 'failed', error: error instanceof Error ? error.message : '发送失败' };
-    }
-    const [refreshedOutbox, refreshedTasks] = await Promise.all([fetchOutbox(), fetchTasks()]);
-    setOutbox(refreshedOutbox.data);
-    setTasks(refreshedTasks.data.items ?? []);
-    return result;
-  }
 
-  async function performOutboxRetry(mode: 'manual' | 'auto', allowStale = false) {
-    if (retryingRef.current || outbox.count === 0) return;
-    retryingRef.current = true;
-    setRetrying(true);
-    if (mode === 'manual') setRetryStatus('');
-    const attemptedAt = new Date().toISOString();
-    if (mode === 'auto') setAutoRetryReport((current) => ({ ...current, completed: false, lastAttemptAt: attemptedAt, error: '' }));
-    try {
-      const result = await retryOutbox(1, allowStale);
-      const failure = result.failures?.[0]?.fallback_reason;
-      const skippedStale = result.skipped_stale ?? 0;
-      if (mode === 'manual') {
-        const summary = '已尝试 ' + result.attempted + ' 条，成功 ' + result.delivered + ' 条，剩余 ' + result.remaining + ' 条';
-        const failureCopy = failure ? ' · ' + formatIssueReason(failure) + ' · ' + formatTechnicalMeta(['原始原因 ' + failure]) : '';
-        const staleCopy = skippedStale ? ' · 已跳过 ' + skippedStale + ' 条超过 48 小时的旧消息' : '';
-        setRetryStatus(`${summary}${failureCopy}${staleCopy}`);
-      }
-      if (mode === 'auto') {
-        setAutoRetryReport({
-          completed: result.remaining === 0,
-          lastAttemptAt: attemptedAt,
-          delivered: result.delivered,
-          remaining: result.remaining,
-          error: skippedStale ? 'stale_outbox_requires_confirmation' : failure ?? '',
-        });
-        if (result.remaining === 0 || skippedStale > 0) setAutoRetryEnabled(false);
-      }
-      const [refreshedOutbox, refreshedTasks] = await Promise.all([fetchOutbox(), fetchTasks()]);
-      setOutbox(refreshedOutbox.data);
-      setTasks(refreshedTasks.data.items ?? []);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : '重试失败';
-      if (mode === 'manual') setRetryStatus(`${formatIssueReason(message)}${isIssueCode(message) ? ` · ${formatTechnicalMeta([`原始原因 ${message}`])}` : ''}`);
-      else setAutoRetryReport((current) => ({ ...current, lastAttemptAt: attemptedAt, error: message }));
-    } finally {
-      retryingRef.current = false;
-      setRetrying(false);
-    }
-  }
 
-  function handleRetryOutbox() {
-    const staleCount = outbox.stale_count ?? outbox.items.filter((item) => item.stored_at && Date.now() - new Date(item.stored_at).getTime() > 48 * 60 * 60 * 1000).length;
-    if (staleCount > 0 && !window.confirm('队列中有 ' + staleCount + ' 条超过 48 小时的旧消息，可能包含历史测试内容。确认逐条重试吗？')) {
-      setRetryStatus('已取消旧任务重试');
-      return;
-    }
-    void performOutboxRetry('manual', staleCount > 0);
-  }
-
-  function handleToggleAutoRetry() {
-    if (autoRetryEnabled) {
-      setAutoRetryEnabled(false);
-      setAutoRetryReport((current) => ({ ...current, completed: false }));
-      return;
-    }
-    if (outbox.count === 0) {
-      setAutoRetryReport((current) => ({ ...current, completed: true, remaining: 0, error: '' }));
-      return;
-    }
-    const staleCount = outbox.stale_count ?? outbox.items.filter((item) => item.stored_at && Date.now() - new Date(item.stored_at).getTime() > 48 * 60 * 60 * 1000).length;
-    if (staleCount > 0) {
-      setAutoRetryReport((current) => ({ ...current, completed: false, error: 'stale_outbox_requires_confirmation' }));
-      return;
-    }
-    setAutoRetryEnabled(true);
-    setAutoRetryReport((current) => ({ ...current, completed: false, error: '' }));
-  }
-
-  useEffect(() => {
-    if (!autoRetryEnabled || tab !== 'activity' || outbox.count === 0) return;
-    const timer = window.setInterval(() => {
-      void performOutboxRetry('auto');
-    }, 60_000);
-    return () => window.clearInterval(timer);
-  }, [autoRetryEnabled, tab, outbox.count]);
-
-  useEffect(() => {
-    if (!autoRetryEnabled || outbox.count !== 0) return;
-    setAutoRetryEnabled(false);
-    setAutoRetryReport((current) => ({ ...current, completed: true, remaining: 0, error: '' }));
-  }, [autoRetryEnabled, outbox.count]);
 
   async function handleInstall() {
     if (!installPrompt) return;
@@ -2072,8 +1276,14 @@ export default function App() {
       setSession(nextSession);
       setAgents([]);
       setTasks([]);
-      setOutbox({ count: 0, items: [] });
       setChannels([]);
+      setGrowth(initialGrowth);
+      setKnowledge(initialKnowledge);
+      setUsageTrend(initialUsageTrend);
+      setTokenUsage(initialTokenUsage);
+      setGrowthState(initialResourceState);
+      setKnowledgeState(initialResourceState);
+      setCostState(initialResourceState);
       setOffline(false);
     } catch (error) {
       setAuthError(error instanceof Error ? error.message : '退出失败，请稍后重试。');
@@ -2081,10 +1291,6 @@ export default function App() {
   }
 
   function handleTabChange(nextTab: Tab) {
-    if (nextTab !== 'activity' && autoRetryEnabled) {
-      setAutoRetryEnabled(false);
-      setAutoRetryReport((current) => ({ ...current, completed: false }));
-    }
     setTab(nextTab);
     const url = new URL(window.location.href);
     if (nextTab === 'office') url.searchParams.delete('view');
@@ -2146,29 +1352,11 @@ export default function App() {
       </header>
       {authError ? <div className="auth-banner" role="alert"><OfficeIcon name="alert" size={17} /><span><strong>登录状态异常。</strong> {authError}</span></div> : null}
       <OfflineBanner show={offline && !authError} />
-      {tab === 'office' && <OfficePage agents={agents} tasks={tasks} selectedId={selectedId} onSelectAgent={handleSelectAgentFromOffice} onOpenTasks={() => handleTabChange('activity')} backendOffline={offline} loading={loading} />}
-      {tab === 'workspace' && <WorkspacePage tasks={tasks} onDispatch={handleWorkspaceDispatch} onExpertSubmit={handleWorkspaceExpertSubmit} />}
+      {tab === 'office' && <OfficePage agents={agents} tasks={tasks} selectedId={selectedId} onSelectAgent={handleSelectAgentFromOffice} onOpenTasks={() => handleTabChange('evolution')} backendOffline={offline} loading={loading} usageTrend={usageTrend} knowledge={knowledge} costState={costState} knowledgeState={knowledgeState} />}
       {tab === 'agent' && <AgentPage agents={agents} selectedId={selectedId} onSelectAgent={handleSelectAgent} agent={selectedAgent} tasks={tasks} evolution={evolution} cameFromOffice={cameFromOffice} onBack={() => { setTab('office'); setCameFromOffice(false); const url = new URL(window.location.href); url.searchParams.delete('view'); url.searchParams.delete('id'); window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`); }} loading={loading} />}
-      {tab === 'topics' && (
-        <TopicsPage />
-      )}
-      {tab === 'workflow' && (
-        <Suspense fallback={(
-          <section className="page-section workflow-page">
-            <div className="workflow-loading-card">
-              <OfficeIcon name="workflow" size={22} />
-              <div>
-                <strong>正在加载工作流画布</strong>
-                <small>工作流编辑器已拆分为独立模块，按需加载以减轻首屏压力。</small>
-              </div>
-            </div>
-          </section>
-        )}>
-          <WorkflowPage />
-        </Suspense>
-      )}
-      {tab === 'evolution' && <EvolutionPage evolution={evolution} />}
-      {tab === 'activity' && <ActivityPage tasks={tasks} outbox={outbox} onExpertPanelSubmit={handleExpertPanelSubmit} onRetryOutbox={handleRetryOutbox} retryStatus={retryStatus} retrying={retrying} autoRetryEnabled={autoRetryEnabled} autoRetryReport={autoRetryReport} onToggleAutoRetry={handleToggleAutoRetry} onSelectAgent={handleSelectAgent} />}
+      {tab === 'evolution' && <EvolutionPage evolution={evolution} growth={growth} growthState={growthState} onRetryGrowth={() => void loadGrowth()} />}
+      {tab === 'knowledge' && <KnowledgePage knowledge={knowledge} resourceState={knowledgeState} onRetry={() => void loadKnowledge()} />}
+      {tab === 'cost' && <CostPage usageTrend={usageTrend} tokenUsage={tokenUsage} resourceState={costState} onRetry={() => void loadCost()} />}
       <nav className="tabbar" aria-label="主导航">
         {tabs.map(({ key, label, icon }) => (
           <button

@@ -39,14 +39,14 @@ const BUTTON_DEBOUNCE_MS = 400;
 const LOG_LIMIT = 80;
 
 const COLORS = {
-  success: '#2f9b68',
-  info: '#477fac',
-  tool: '#9e6c00',
-  weixin: '#1e88e5',
-  condition: '#8e24aa',
-  hermes: '#e64a19',
-  danger: '#b3261e',
-  edge: '#8b9bad',
+  success: '#39765a',
+  info: '#416f91',
+  tool: '#7a6337',
+  weixin: '#416f91',
+  condition: '#6d6478',
+  hermes: '#8a5a3c',
+  danger: '#9a5050',
+  edge: '#7b858d',
 } as const;
 
 const nodeMeta: Record<WorkflowNodeType, NodeMeta> = {

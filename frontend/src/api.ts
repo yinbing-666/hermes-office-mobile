@@ -1,4 +1,4 @@
-import type { ActivityItem, AgentInfo, ApiState, CronJob, DelegationTasksData, EvolutionData, MessageResponse, OutboxData, OutboxRetryResponse, TaskItem, TasksData } from './types';
+import type { ActivityItem, AgentInfo, ApiState, CronJob, DelegationTasksData, EvolutionData, GrowthData, KnowledgeData, MessageResponse, OutboxData, OutboxRetryResponse, TaskItem, TasksData, UsageTrendData } from './types';
 
 export type SessionData = {
   ok: boolean;
@@ -146,6 +146,10 @@ export function fetchAgents() {
   return getJson<{ agents: AgentInfo[] }>('/api/agents', { agents: [] });
 }
 
+export function fetchHealth() {
+  return getJson<{ ok: boolean; service: string }>('/api/health', { ok: false, service: '' });
+}
+
 export function fetchActivity() {
   return getJson<{ items?: ActivityItem[]; events?: ActivityItem[] }>('/api/activity', { items: [] });
 }
@@ -259,6 +263,47 @@ export async function fetchTokenUsage() {
   });
 }
 
+export async function fetchGrowth() {
+  return getJson<GrowthData>('/api/growth', {
+    generated_at: '',
+    available: false,
+    total: 0,
+    summary: {},
+    records: [],
+  });
+}
+
+export async function fetchKnowledge() {
+  return getJson<KnowledgeData>('/api/knowledge', {
+    generated_at: '',
+    available: false,
+    counts: { 来源: 0, 概念: 0, 对比: 0, 实体: 0, 想法: 0 },
+    total: 0,
+    trend: [],
+    recent_commits: [],
+  });
+}
+
+export async function fetchUsageTrend() {
+  const result = await getJson<Omit<UsageTrendData, 'today'> & { today?: UsageTrendData['today'] | string }>('/api/usage/trend?days=14', {
+    ok: true,
+    available: false,
+    days: [],
+    total_calls: 0,
+  });
+  const responseToday = result.data.today;
+  const shanghaiDate = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Shanghai',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date());
+  const today = typeof responseToday === 'string'
+    ? result.data.days.find((day) => day.date === responseToday)
+    : responseToday ?? result.data.days.find((day) => day.date === shanghaiDate);
+  return { ...result, data: { ...result.data, today } as UsageTrendData };
+}
+
 export async function runExpertPipeline(
   workspaceName: string,
   goal: string,
@@ -293,16 +338,39 @@ export async function fetchExpertPipeline(batchId: string): Promise<PipelineResu
   return data;
 }
 
+const POLL_INITIAL_DELAY_MS = 1000;
+const POLL_MAX_DELAY_MS = 30_000;
+const POLL_BACKOFF_FACTOR = 2;
+const POLL_MAX_CONSECUTIVE_ERRORS = 5;
+
 export async function waitForExpertPipeline(
   batchId: string,
   onUpdate?: (result: PipelineResult) => void,
 ): Promise<PipelineResult> {
   const deadline = Date.now() + 5 * 60 * 1000;
+  let delay = POLL_INITIAL_DELAY_MS;
+  let consecutiveErrors = 0;
+
   while (Date.now() < deadline) {
-    const result = await fetchExpertPipeline(batchId);
+    let result: PipelineResult;
+    try {
+      result = await fetchExpertPipeline(batchId);
+      consecutiveErrors = 0;
+    } catch (error) {
+      consecutiveErrors += 1;
+      if (consecutiveErrors >= POLL_MAX_CONSECUTIVE_ERRORS) {
+        throw error;
+      }
+      const wait = Math.min(delay, deadline - Date.now(), POLL_MAX_DELAY_MS);
+      if (wait <= 0) break;
+      await new Promise((resolve) => window.setTimeout(resolve, wait));
+      delay = Math.min(delay * POLL_BACKOFF_FACTOR, POLL_MAX_DELAY_MS);
+      continue;
+    }
     onUpdate?.(result);
     if (result.status === 'completed' || result.status === 'failed') return result;
-    await new Promise((resolve) => window.setTimeout(resolve, 1000));
+    await new Promise((resolve) => window.setTimeout(resolve, delay));
+    delay = Math.min(delay * POLL_BACKOFF_FACTOR, POLL_MAX_DELAY_MS);
   }
   throw new Error('专家流水线状态查询超时，请稍后按批次查看结果');
 }

@@ -1,4 +1,4 @@
-export type AgentId = 'default' | 'media-ops' | 'investor' | string;
+export type AgentId = 'default' | 'media-ops' | 'investor';
 
 export interface AgentInfo {
   id: AgentId;
@@ -152,4 +152,48 @@ export interface ApiState<T> {
   data: T;
   offline: boolean;
   error?: string;
+}
+
+export type GrowthRecordType = 'growth' | 'decision' | 'pitfall' | 'review' | 'idea' | 'case' | 'skill' | 'knowledge';
+
+export interface GrowthRecord {
+  id: string;
+  type: unknown;
+  title: string;
+  date: string | null;
+  status: string;
+  source: string;
+}
+
+export interface GrowthData {
+  generated_at: string;
+  available: boolean;
+  total: number;
+  summary: Partial<Record<string, number>>;
+  records: GrowthRecord[];
+}
+
+export interface KnowledgeData {
+  generated_at: string;
+  available: boolean;
+  counts: { 来源: number; 概念: number; 对比: number; 实体: number; 想法: number };
+  total: number;
+  trend: Array<{ date: string; files_added: number }>;
+  recent_commits: GrowthRecord[];
+}
+
+export interface UsageDay {
+  date: string;
+  input_tokens: number;
+  output_tokens: number;
+  cache_read_tokens: number;
+  api_calls: number;
+}
+
+export interface UsageTrendData {
+  ok: boolean;
+  available: boolean;
+  days: UsageDay[];
+  total_calls: number;
+  today?: UsageDay;
 }
