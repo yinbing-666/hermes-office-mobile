@@ -947,6 +947,31 @@ def token_usage() -> dict[str, Any]:
     }
 
 
+@app.get("/api/codex-usage")
+def codex_usage(days: int = 14) -> dict[str, Any]:
+    """Codex CLI / Claude Code 本地 Token 用量（复用 token-tracker 库，读 ~/.codex transcripts）。
+
+    与 /api/token-usage 互补：后者只统计 Hermes 网关自身请求，本接口统计
+    Codex CLI / CC 直连的用量（独立计费，state.db 不覆盖）。
+    """
+    import json as _json
+    script = Path("/home/agentuser/.hermes/scripts/codex-usage-aggregate.py")
+    if not script.is_file():
+        return {"ok": True, "available": False, "message": "codex-usage-aggregate.py 不存在"}
+    days = max(1, min(int(days), 90))
+    try:
+        result = subprocess.run(
+            ["/home/agentuser/.local/share/uv/tools/token-tracker/bin/python", str(script), str(days)],
+            capture_output=True, text=True, timeout=60,
+        )
+        if result.returncode != 0:
+            return {"ok": True, "available": False, "message": result.stderr.strip()[:200]}
+        return _json.loads(result.stdout.strip())
+    except (OSError, subprocess.SubprocessError, _json.JSONDecodeError) as exc:
+        logger.exception("Codex 用量聚合失败")
+        return {"ok": True, "available": False, "message": f"内部错误: {exc}"}
+
+
 @app.get("/api/agents")
 def agents() -> dict[str, Any]:
     items: list[dict[str, Any]] = []

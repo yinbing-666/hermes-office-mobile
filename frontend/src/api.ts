@@ -263,6 +263,51 @@ export async function fetchTokenUsage() {
   });
 }
 
+export interface CodexUsageData {
+  ok: boolean;
+  available: boolean;
+  date: string;
+  source?: string;
+  total?: {
+    input_tokens: number;
+    output_tokens: number;
+    cache_read_tokens: number;
+    total_tokens: number;
+    cost_usd: number;
+    api_calls: number;
+    sessions: number;
+  };
+  by_model?: Array<{
+    model: string;
+    input_tokens: number;
+    output_tokens: number;
+    cache_read_tokens: number;
+    cost_usd: number;
+    api_calls: number;
+    sessions: number;
+  }>;
+  days?: Array<{
+    date: string;
+    input_tokens: number;
+    output_tokens: number;
+    cache_read_tokens: number;
+    cost_usd: number;
+    api_calls: number;
+    sessions: number;
+  }>;
+}
+
+export async function fetchCodexUsage() {
+  return getJson<CodexUsageData>('/api/codex-usage?days=14', {
+    ok: true,
+    available: false,
+    date: '',
+    total: { input_tokens: 0, output_tokens: 0, cache_read_tokens: 0, total_tokens: 0, cost_usd: 0, api_calls: 0, sessions: 0 },
+    by_model: [],
+    days: [],
+  });
+}
+
 export async function fetchGrowth() {
   return getJson<GrowthData>('/api/growth', {
     generated_at: '',

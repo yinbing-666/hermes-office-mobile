@@ -515,6 +515,7 @@ input:focus { border-color: #8fb8df; box-shadow: 0 0 0 3px rgba(77, 143, 216, .0
 .cost-page .growth-summary { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 .cost-page .trend-chart { grid-template-columns: repeat(14, minmax(24px, 1fr)); overflow-x: auto; }
 .model-usage-card { padding-top: 7px; padding-bottom: 7px; }
+.codex-usage-note { margin: 8px 0 4px; padding: 8px 10px; color: var(--muted); background: var(--surface-soft); border: 1px solid var(--line); border-radius: 8px; font-size: 10px; line-height: 1.5; }
 .model-usage-list { display: grid; }
 .model-usage-item { min-width: 0; display: grid; gap: 8px; padding: 12px 0; border-bottom: 1px solid var(--line); }
 .model-usage-item:last-child { border-bottom: 0; }

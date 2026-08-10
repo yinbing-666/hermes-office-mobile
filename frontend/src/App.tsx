@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
-import { fetchAgents, fetchEvolution, fetchTasks, sendMessage, fetchSession, loginWithPassword, logoutSession, fetchTokenUsage, fetchGrowth, fetchKnowledge, fetchUsageTrend, fetchHealth } from './api';
+import { fetchAgents, fetchEvolution, fetchTasks, sendMessage, fetchSession, loginWithPassword, logoutSession, fetchTokenUsage, fetchCodexUsage, fetchGrowth, fetchKnowledge, fetchUsageTrend, fetchHealth } from './api';
+import type { CodexUsageData } from './api';
 import { OfficeIcon, type OfficeIconName } from './components/OfficeIcon';
 import { LoginPage } from './LoginPage';
 import type { AgentInfo, EvolutionData, GrowthData, KnowledgeData, TaskItem, TaskStatus, UsageTrendData } from './types';
@@ -22,6 +23,7 @@ const initialGrowth: GrowthData = { generated_at: '', available: false, total: 0
 const initialKnowledge: KnowledgeData = { generated_at: '', available: false, counts: { 来源: 0, 概念: 0, 对比: 0, 实体: 0, 想法: 0 }, total: 0, trend: [], recent_commits: [] };
 const initialUsageTrend: UsageTrendData = { ok: true, available: false, days: [], total_calls: 0 };
 const initialTokenUsage: TokenUsageData = { ok: true, available: false, date: '', total: { input_tokens: 0, output_tokens: 0, cache_read_tokens: 0, total_tokens: 0, saved_tokens: 0, api_calls: 0 }, by_model: [] };
+const initialCodexUsage: CodexUsageData = { ok: true, available: false, date: '', total: { input_tokens: 0, output_tokens: 0, cache_read_tokens: 0, total_tokens: 0, cost_usd: 0, api_calls: 0, sessions: 0 }, by_model: [], days: [] };
 const initialResourceState: ResourceState = { status: 'loading' };
 
 const fallbackRole: RoleMeta = { role: 'Hermes 智能员工', focus: '自定义智能员工', tone: 'blue', avatar: '', tags: ['任务执行', '协作响应'] };
@@ -1007,7 +1009,7 @@ function formatTokens(value: number): string {
   return String(value);
 }
 
-function CostPage({ usageTrend, tokenUsage, resourceState, onRetry }: { usageTrend: UsageTrendData; tokenUsage: TokenUsageData; resourceState: ResourceState; onRetry: () => void }) {
+function CostPage({ usageTrend, tokenUsage, codexUsage, resourceState, onRetry }: { usageTrend: UsageTrendData; tokenUsage: TokenUsageData; codexUsage: CodexUsageData; resourceState: ResourceState; onRetry: () => void }) {
   const days = (usageTrend.days ?? []).map((day) => ({
     ...day,
     totalTokens: (day.input_tokens ?? 0) + (day.output_tokens ?? 0) + (day.cache_read_tokens ?? 0),
@@ -1084,6 +1086,38 @@ function CostPage({ usageTrend, tokenUsage, resourceState, onRetry }: { usageTre
           </div>
         )}
       </div>
+
+      <div className="section-heading"><div><p className="section-kicker">Codex CLI</p><h2>Codex / CC 用量</h2></div><span>本地 transcripts</span></div>
+      <div className="archive-card model-usage-card">
+        {!codexUsage.available || !codexUsage.total ? (
+          <p className="archive-empty">暂无 Codex 用量数据（token-tracker 未安装或无记录）。</p>
+        ) : (
+          <>
+            <div className="growth-summary">
+              <div><strong>{formatTokens((codexUsage.total.input_tokens ?? 0) + (codexUsage.total.output_tokens ?? 0) + (codexUsage.total.cache_read_tokens ?? 0))}</strong><span>今日总消耗</span></div>
+              <div><strong>{formatTokens(codexUsage.total.input_tokens ?? 0)}</strong><span>今日输入</span></div>
+              <div><strong>{formatTokens(codexUsage.total.output_tokens ?? 0)}</strong><span>今日输出</span></div>
+              <div><strong>${(codexUsage.total.cost_usd ?? 0).toFixed(2)}</strong><span>今日成本估算</span></div>
+            </div>
+            <div className="codex-usage-note">数据来自 token-tracker 读取 ~/.codex sessions · 今日 {codexUsage.total.api_calls ?? 0} 次调用 · {codexUsage.total.sessions ?? 0} 个会话 · 与 Hermes 网关用量独立计费</div>
+            {(codexUsage.by_model ?? []).length > 0 && (
+              <div className="model-usage-list">
+                {(codexUsage.by_model ?? []).map((item) => (
+                  <div className="model-usage-item" key={item.model}>
+                    <div className="model-usage-head">
+                      <div>
+                        <strong>{item.model}</strong>
+                        <small>{item.api_calls ?? 0} 次调用 · 缓存命中 {formatTokens(item.cache_read_tokens ?? 0)} · 成本 ${(item.cost_usd ?? 0).toFixed(2)}</small>
+                      </div>
+                      <span><strong>{formatTokens((item.input_tokens ?? 0) + (item.output_tokens ?? 0) + (item.cache_read_tokens ?? 0))}</strong><small>Token</small></span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </>
+        )}
+      </div>
     </section>
   );
 }
@@ -1104,6 +1138,7 @@ export default function App() {
   const [knowledge, setKnowledge] = useState<KnowledgeData>(initialKnowledge);
   const [usageTrend, setUsageTrend] = useState<UsageTrendData>(initialUsageTrend);
   const [tokenUsage, setTokenUsage] = useState<TokenUsageData>(initialTokenUsage);
+  const [codexUsage, setCodexUsage] = useState<CodexUsageData>(initialCodexUsage);
   const [growthState, setGrowthState] = useState<ResourceState>(initialResourceState);
   const [knowledgeState, setKnowledgeState] = useState<ResourceState>(initialResourceState);
   const [costState, setCostState] = useState<ResourceState>(initialResourceState);
@@ -1167,13 +1202,14 @@ export default function App() {
   async function loadCost() {
     setCostState({ status: 'loading' });
     try {
-      const [usageResult, tokenResult] = await Promise.all([fetchUsageTrend(), fetchTokenUsage()]);
-      if (usageResult.offline || tokenResult.offline) {
-        setCostState({ status: 'error', error: usageResult.error || tokenResult.error });
+      const [usageResult, tokenResult, codexResult] = await Promise.all([fetchUsageTrend(), fetchTokenUsage(), fetchCodexUsage()]);
+      if (usageResult.offline || tokenResult.offline || codexResult.offline) {
+        setCostState({ status: 'error', error: usageResult.error || tokenResult.error || codexResult.error });
         return;
       }
       setUsageTrend(usageResult.data);
       setTokenUsage(tokenResult.data);
+      setCodexUsage(codexResult.data);
       setCostState({ status: 'success' });
     } catch (error) {
       const message = error instanceof Error ? error.message : '网络请求失败';
@@ -1358,7 +1394,7 @@ export default function App() {
       {tab === 'agent' && <AgentPage agents={agents} selectedId={selectedId} onSelectAgent={handleSelectAgent} agent={selectedAgent} tasks={tasks} evolution={evolution} cameFromOffice={cameFromOffice} onBack={() => { setTab('office'); setCameFromOffice(false); const url = new URL(window.location.href); url.searchParams.delete('view'); url.searchParams.delete('id'); window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`); }} loading={loading} />}
       {tab === 'evolution' && <EvolutionPage evolution={evolution} growth={growth} growthState={growthState} onRetryGrowth={() => void loadGrowth()} />}
       {tab === 'knowledge' && <KnowledgePage knowledge={knowledge} resourceState={knowledgeState} onRetry={() => void loadKnowledge()} />}
-      {tab === 'cost' && <CostPage usageTrend={usageTrend} tokenUsage={tokenUsage} resourceState={costState} onRetry={() => void loadCost()} />}
+      {tab === 'cost' && <CostPage usageTrend={usageTrend} tokenUsage={tokenUsage} codexUsage={codexUsage} resourceState={costState} onRetry={() => void loadCost()} />}
       <nav className="tabbar" aria-label="主导航">
         {tabs.map(({ key, label, icon }) => (
           <button
