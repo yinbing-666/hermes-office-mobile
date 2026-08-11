@@ -11,6 +11,7 @@ logger = logging.getLogger(__name__)
 DRAGON_BASE_URL: str = os.environ.get("DRAGON_BASE_URL", "https://newapi.dragon3api.com/v1")
 DRAGON_MODEL: str = os.environ.get("DRAGON_MODEL", "gpt-5.6-sol")
 import socket
+import stat
 import subprocess
 import sys
 import threading
@@ -1622,68 +1623,93 @@ def outbox() -> dict[str, Any]:
 
 @app.post("/api/outbox/retry")
 def retry_outbox(payload: OutboxRetryRequest) -> dict[str, Any]:
+    # 锁内只做快照和状态决策（快，不碰网络），网络投递移出锁外，避免阻塞整个队列。
+    # 并发防护：锁内为待处理记录打 lease_id 标记并立即写回，第二个并发请求看到 processing 会跳过。
     with _OUTBOX_LOCK:
         records = read_outbox_records()
-        remaining: list[dict[str, Any]] = []
-        attempted = 0
-        delivered = 0
-        skipped_stale = 0
-        failures: list[dict[str, Any]] = []
-
+        stale_records: list[dict[str, Any]] = []
+        pending: list[dict[str, Any]] = []
         for record in records:
+            if record.get("processing"):
+                continue  # 已有并发重试在投递，跳过
             if not payload.allow_stale and outbox_is_stale(record):
-                remaining.append(record)
-                skipped_stale += 1
+                stale_records.append(record)
                 continue
-            if attempted >= payload.limit:
-                remaining.append(record)
-                continue
-            attempted += 1
-            agent_id = str(record.get("agent_id") or "").strip()
-            message = str(record.get("message") or "").strip()
-            definition = PROFILE_BY_ID.get(agent_id)
-            reason = "unknown_agent"
-            if definition is not None and message:
-                port = int(definition["port"])
-                if is_port_listening(port):
-                    key = read_api_server_key(Path(definition["config_path"]))
-                    if key:
-                        try:
-                            result = deliver_to_api_server(port, key, message)
-                            write_sent_record(record, redact_secret(result, key, limit=240))
-                            delivered += 1
-                            continue
-                        except (
-                            OSError,
-                            UnicodeError,
-                            json.JSONDecodeError,
-                            urllib.error.URLError,
-                        ):
-                            reason = "api_request_failed"
-                    else:
-                        reason = "api_key_unavailable"
-                else:
-                    reason = "api_server_offline"
-            elif not message:
-                reason = "empty_message"
-            record["fallback_reason"] = reason
-            remaining.append(record)
-            failures.append({
-                "id": record.get("id"),
-                "agent_id": redact_text(agent_id, limit=64),
-                "fallback_reason": reason,
-            })
+            pending.append(record)
+        # 截断到 limit（保持顺序，先到先投）
+        to_attempt = pending[: payload.limit]
+        untouched = pending[payload.limit:]
+        lease_id = f"lease-{uuid.uuid4().hex[:10]}"
+        for record in to_attempt:
+            record["processing"] = lease_id
+        # 写回：stale 原样保留 + 待投递打标 + 未触碰保留
+        write_outbox_records(stale_records + to_attempt + untouched)
 
-        write_outbox_records(remaining)
-        return {
-            "ok": True,
-            "attempted": attempted,
-            "delivered": delivered,
-            "remaining": len(remaining),
-            "skipped_stale": skipped_stale,
-            "failures": failures[:10],
-            "generated_at": utc_now(),
-        }
+    attempted = 0
+    delivered = 0
+    failures: list[dict[str, Any]] = []
+    for record in to_attempt:
+        attempted += 1
+        agent_id = str(record.get("agent_id") or "").strip()
+        message = str(record.get("message") or "").strip()
+        definition = PROFILE_BY_ID.get(agent_id)
+        reason = "unknown_agent"
+        if definition is not None and message:
+            port = int(definition["port"])
+            if is_port_listening(port):
+                key = read_api_server_key(Path(definition["config_path"]))
+                if key:
+                    try:
+                        result = deliver_to_api_server(port, key, message)
+                        sent_clean = {k: v for k, v in record.items() if k not in ("id", "processing")}
+                        with _OUTBOX_LOCK:
+                            write_sent_record(sent_clean, redact_secret(result, key, limit=240))
+                        delivered += 1
+                        continue
+                    except (
+                        OSError,
+                        UnicodeError,
+                        json.JSONDecodeError,
+                        urllib.error.URLError,
+                    ):
+                        reason = "api_request_failed"
+                else:
+                    reason = "api_key_unavailable"
+            else:
+                reason = "api_server_offline"
+        elif not message:
+            reason = "empty_message"
+        record["fallback_reason"] = reason
+        failures.append({
+            "id": record.get("id"),
+            "agent_id": redact_text(agent_id, limit=64),
+            "fallback_reason": reason,
+        })
+
+    # 锁内合并写回：只移除本 lease 已投递成功的；失败/未触碰/stale 全部保留
+    with _OUTBOX_LOCK:
+        current = read_outbox_records()
+        merged: list[dict[str, Any]] = []
+        for rec in current:
+            if rec.get("processing") == lease_id:
+                if any(f.get("id") == rec.get("id") for f in failures):
+                    rec.pop("processing", None)
+                    rec["fallback_reason"] = next(f["fallback_reason"] for f in failures if f.get("id") == rec.get("id"))
+                    merged.append(rec)
+                # 投递成功的记录：从 outbox 移除（已进 sent）
+            else:
+                merged.append(rec)
+        write_outbox_records(merged)
+
+    return {
+        "ok": True,
+        "attempted": attempted,
+        "delivered": delivered,
+        "remaining": len(merged),
+        "skipped_stale": len(stale_records),
+        "failures": failures[:10],
+        "generated_at": utc_now(),
+    }
 
 
 @app.post("/api/messages")
@@ -1793,10 +1819,10 @@ def queue_message(payload: MessageRequest) -> Any:
 
 # ============== v5 Workflow API ==============
 class Workflow(BaseModel):
-    id: str | None = None
+    id: str | None = Field(default=None, max_length=100)
     name: str = Field(..., min_length=1, max_length=100)
-    nodes: list = Field(default_factory=list)
-    edges: list = Field(default_factory=list)
+    nodes: list = Field(default_factory=list, max_length=50)
+    edges: list = Field(default_factory=list, max_length=100)
     created_at: str | None = None
     updated_at: str | None = None
 
@@ -1878,10 +1904,13 @@ def load_workflows() -> list[dict[str, Any]]:
 def save_workflows(workflows: list[dict[str, Any]]) -> None:
     WORKFLOWS_FILE.parent.mkdir(parents=True, exist_ok=True)
     payload = {"ok": True, "workflows": workflows, "updated_at": utc_now()}
-    WORKFLOWS_FILE.write_text(
+    # 原子写：先写临时文件再 os.replace，避免崩溃损坏 JSON
+    tmp_path = WORKFLOWS_FILE.with_suffix(".json.tmp")
+    tmp_path.write_text(
         json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
     )
+    tmp_path.replace(WORKFLOWS_FILE)
 
 
 def upsert_workflow(workflow: dict[str, Any]) -> dict[str, Any]:
@@ -1959,8 +1988,9 @@ async def summarize_expert_batch(batch_id: str | None = None):
                     break
         if not api_key:
             return JSONResponse(status_code=500, content={"error": "API key 未找到"})
-    except Exception as exc:
-        return JSONResponse(status_code=500, content={"error": f"配置读取失败: {exc}"})
+    except Exception:
+        logger.exception("summarize 配置读取失败")
+        return JSONResponse(status_code=500, content={"error": "配置读取失败"})
 
     # ── 3. 找同 batch_id 的三条专家回复 ───────────────────────
     try:
@@ -2012,15 +2042,14 @@ async def summarize_expert_batch(batch_id: str | None = None):
     loop = asyncio.get_running_loop()
     try:
         summary = await loop.run_in_executor(None, lambda: _sync_call(f"{llm_base_url}/v1/chat/completions", api_key, llm_model, summarize_prompt))
-    except Exception as exc:
-        return JSONResponse(status_code=502, content={"error": f"LLM 调用失败: {exc}"})
+    except Exception:
+        logger.exception("summarize LLM 调用失败")
+        return JSONResponse(status_code=502, content={"error": "LLM 调用失败"})
 
     return {
         "ok": True,
         "summary": summary,
         "batch_id": batch_id or found_batch_id,
-        "model": llm_model,
-        "base_url": llm_base_url,
         "source_agents": list(batch_msgs.keys()),
     }
 
@@ -2038,15 +2067,33 @@ async def kanban_unblock(task_id: str):
             capture_output=True, text=True, timeout=20,
             env={**__import__("os").environ, "HERMES_HOME": "/home/agentuser/.hermes"},
         )
+        if r.returncode != 0:
+            logger.warning("kanban promote 失败 task_id=%s stderr=%s", task_id, r.stderr[:200])
         return {
             "ok": r.returncode == 0,
             "task_id": task_id,
-            "stdout": r.stdout[:200],
-            "stderr": r.stderr[:200],
         }
-    except Exception as exc:
-        logger.exception("Topics 执行失败")
+    except Exception:
+        logger.exception("kanban promote 执行失败")
         return JSONResponse(status_code=500, content={"error": "内部错误，请稍后重试"})
+
+
+def _safe_topic_file(path: Path) -> Path | None:
+    """安全检查选题文件：拒绝符号链接/非常规文件，防止 /tmp 符号链接劫持。"""
+    try:
+        st = path.lstat()
+    except OSError:
+        return None
+    if not stat.S_ISREG(st.st_mode):
+        return None
+    # 确认非符号链接（lstat 已保证，再 resolve 校验最终路径不越界）
+    try:
+        resolved = path.resolve(strict=True)
+    except OSError:
+        return None
+    if str(resolved) != str(path):
+        return None
+    return path
 
 
 @app.get("/api/topics")
@@ -2054,12 +2101,20 @@ async def get_topics():
     """返回选题列表，优先读当天文件，文件过期或不存在则返回空列表。"""
     from datetime import datetime
     today = datetime.now().strftime("%Y-%m-%d")
-    topic_file = Path(f"/tmp/topics_{today}.md")
     yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
-    fallback = Path(f"/tmp/topics_{yesterday}.md")
-    source_file = topic_file if topic_file.exists() else fallback
 
-    if not source_file.exists():
+    # 优先 runtime 私有目录（无符号链接风险）
+    runtime_topic = PROJECT_ROOT / "runtime" / f"topics_{today}.md"
+    runtime_fallback = PROJECT_ROOT / "runtime" / f"topics_{yesterday}.md"
+    topic_file = _safe_topic_file(runtime_topic) or _safe_topic_file(runtime_fallback)
+    if topic_file is None:
+        # 兼容旧写入方：/tmp 路径，但必须通过符号链接校验
+        topic_file = _safe_topic_file(Path(f"/tmp/topics_{today}.md"))
+    if topic_file is None:
+        topic_file = _safe_topic_file(Path(f"/tmp/topics_{yesterday}.md"))
+    source_file = topic_file
+
+    if source_file is None or not source_file.exists():
         return {"ok": True, "topics": [], "source": "none", "message": "暂无选题数据"}
 
     # 检查是否过期（超过48小时）
