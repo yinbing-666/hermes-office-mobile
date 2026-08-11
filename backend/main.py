@@ -1994,7 +1994,7 @@ async def summarize_expert_batch(batch_id: str | None = None):
 
     # ── 3. 找同 batch_id 的三条专家回复 ───────────────────────
     try:
-        with open("/home/agentuser/projects/hermes-office-mobile/backend/runtime/sent.jsonl", encoding="utf-8") as f:
+        with open(SENT_FILE, encoding="utf-8") as f:
             lines = f.readlines()
     except FileNotFoundError:
         return JSONResponse(status_code=404, content={"error": "sent.jsonl 不存在"})
@@ -2007,13 +2007,15 @@ async def summarize_expert_batch(batch_id: str | None = None):
         except json.JSONDecodeError:
             continue
         bid = rec.get("batch_id")
-        # 锁定第一个遇到的 bid，防止不同 batch 混进同一条
+        # 锁定第一个遇到的 bid；未指定时跳过无 batch_id 的普通记录，避免混批
         if found_batch_id is None:
+            if not bid:
+                continue
             found_batch_id = bid
         if bid != found_batch_id:
             continue
         agent = rec.get("agent_id", "unknown")
-        resp = rec.get("response_preview", "")
+        resp = rec.get("response") or rec.get("response_preview", "")
         if agent not in batch_msgs:
             batch_msgs[agent] = resp
         if len(batch_msgs) >= 2:
@@ -2232,11 +2234,15 @@ def _read_agent_response(batch_id: str, target_agent: str | None = None) -> dict
             continue
         bid = rec.get("batch_id")
         if found_batch_id is None:
+            # 未指定批次时：跳过无 batch_id 的普通记录，锁定最新的非空批次
+            if not bid:
+                continue
             found_batch_id = bid
         if bid != found_batch_id:
             continue
         agent = rec.get("agent_id", "unknown")
-        resp = rec.get("response_preview", "")
+        # 优先完整 response，旧格式回退 response_preview
+        resp = rec.get("response") or rec.get("response_preview", "")
         if target_agent and agent != target_agent:
             continue
         if agent not in batch_msgs:
@@ -2278,7 +2284,7 @@ def _get_llm_config() -> tuple[str, str, str]:
 
 
 def _send_to_hermes(agent_id: str, message: str, batch_id: str) -> dict[str, Any]:
-    """通过 Hermes 发送消息到指定 agent。"""
+    """通过 Hermes 发送消息到指定 agent，并落盘响应供批次汇总。"""
     profile_map = {
         "default": ("mimo-sg1", 8642),
         "media-ops": ("mimo-sg2", 8650),
@@ -2308,10 +2314,66 @@ def _send_to_hermes(agent_id: str, message: str, batch_id: str) -> dict[str, Any
         )
         with urllib.request.urlopen(req, timeout=MESSAGE_TIMEOUT_SECONDS) as resp:
             result = json.loads(resp.read())
-            return {"ok": True, "delivered": True, "result": result}
+
+        # JSON-RPC error 也算失败（HTTP 200 但业务错误）
+        if result.get("error"):
+            logger.warning("JSON-RPC 返回错误 agent=%s error=%s", agent_id, str(result["error"])[:200])
+            return {"ok": False, "delivered": False, "error": "agent 返回错误"}
+
+        # 提取完整响应文本（兼容字符串/对象结构）
+        response_text = _extract_rpc_response(result)
+        if not response_text:
+            return {"ok": False, "delivered": False, "error": "agent 响应为空"}
+
+        # 落盘：带 batch_id + 完整 response（供批次汇总/审计），response_preview 仅界面展示用
+        write_sent_record(
+            {
+                "stored_at": utc_now(),
+                "batch_id": batch_id,
+                "agent_id": agent_id,
+                "message": redact_text(message, limit=4000),
+                "source": "expert_pipeline",
+                "record_type": "expert_response",
+                "response": redact_text(response_text, limit=20000),
+            },
+            response_preview=redact_text(response_text, limit=240),
+        )
+        return {"ok": True, "delivered": True, "response": response_text, "result": result}
     except Exception as exc:
         logger.exception("消息投递失败")
         return {"ok": False, "delivered": False, "error": "内部错误，请稍后重试"}
+
+
+def _extract_rpc_response(result: dict[str, Any]) -> str:
+    """从 JSON-RPC result 中提取模型回复文本（兼容字符串/对象结构）。"""
+    inner = result.get("result")
+    if isinstance(inner, str):
+        return inner
+    if isinstance(inner, dict):
+        # 兼容 {message: {content: ...}} / {content: ...} / {response: ...} / {output: ...}
+        msg = inner.get("message")
+        if isinstance(msg, dict):
+            content = msg.get("content")
+            if isinstance(content, str):
+                return content
+            if isinstance(content, list):
+                parts = []
+                for item in content:
+                    if isinstance(item, dict) and isinstance(item.get("text"), str):
+                        parts.append(item["text"])
+                if parts:
+                    return "\n".join(parts)
+        for key in ("content", "response", "output", "text", "reply"):
+            value = inner.get(key)
+            if isinstance(value, str) and value.strip():
+                return value
+        if isinstance(inner.get("choices"), list) and inner["choices"]:
+            choice = inner["choices"][0]
+            if isinstance(choice, dict):
+                message = choice.get("message")
+                if isinstance(message, dict) and isinstance(message.get("content"), str):
+                    return message["content"]
+    return ""
 
 
 def _execute_expert_pipeline(req: PipelineRequest, batch_id: str) -> dict[str, Any]:
@@ -2346,8 +2408,8 @@ def _execute_expert_pipeline(req: PipelineRequest, batch_id: str) -> dict[str, A
         step["status"] = "running"
         send_result = _send_to_hermes("default", prompt, batch_id)
         if send_result.get("delivered"):
-            # 等待回复
-            response = _wait_for_response(batch_id, "default", timeout=40)
+            # 优先用同步返回的完整响应（落盘已做），异步兜底轮询
+            response = send_result.get("response") or _wait_for_response(batch_id, "default", timeout=40)
             if response:
                 context_so_far["default"] = response
                 step["status"] = "done"
@@ -2375,7 +2437,7 @@ def _execute_expert_pipeline(req: PipelineRequest, batch_id: str) -> dict[str, A
         step["status"] = "running"
         send_result = _send_to_hermes("media-ops", prompt, batch_id)
         if send_result.get("delivered"):
-            response = _wait_for_response(batch_id, "media-ops", timeout=40)
+            response = send_result.get("response") or _wait_for_response(batch_id, "media-ops", timeout=40)
             if response:
                 context_so_far["media-ops"] = response
                 step["status"] = "done"
@@ -2404,7 +2466,7 @@ def _execute_expert_pipeline(req: PipelineRequest, batch_id: str) -> dict[str, A
         step["status"] = "running"
         send_result = _send_to_hermes("investor", prompt, batch_id)
         if send_result.get("delivered"):
-            response = _wait_for_response(batch_id, "investor", timeout=40)
+            response = send_result.get("response") or _wait_for_response(batch_id, "investor", timeout=40)
             if response:
                 context_so_far["investor"] = response
                 step["status"] = "done"
