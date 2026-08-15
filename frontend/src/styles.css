@@ -554,12 +554,12 @@ input:focus { border-color: #8fb8df; box-shadow: 0 0 0 3px rgba(77, 143, 216, .0
 .resource-state-card small { overflow-wrap: anywhere; color: var(--muted); font-size: 10px; line-height: 1.45; }
 .resource-state-card button { display: flex; align-items: center; gap: 4px; padding: 7px 9px; color: #8f4b43; background: #fff; border: 1px solid #dfc3bd; border-radius: 7px; font-size: 10px; font-weight: 650; }
 .resource-state-card button:focus-visible { outline: 2px solid #c98f84; outline-offset: 2px; }
-.trend-card { padding-top: 13px; }
+.trend-card { padding-top: 13px; overflow: hidden; }
 .trend-legend { display: flex; justify-content: flex-end; gap: 12px; color: var(--muted); font-size: 10px; }
 .trend-legend span { display: flex; align-items: center; gap: 5px; }
 .trend-legend i { width: 7px; height: 7px; display: block; border-radius: 2px; }
-.trend-legend .skill { background: #6e9bc2; }
-.trend-legend .profile { background: #c5a56a; }
+.trend-legend .skill { background: #4a7fad; }
+.trend-legend .profile { background: #a07c3a; }
 .trend-chart { height: 160px; display: grid; grid-template-columns: repeat(7, 1fr); gap: 8px; align-items: end; padding-top: 14px; }
 .trend-column { min-width: 0; height: 100%; display: grid; grid-template-rows: 14px minmax(0, 1fr) 14px; gap: 5px; align-items: end; text-align: center; }
 .trend-column > span { color: #66717b; font-size: 10px; line-height: 1; }
@@ -570,7 +570,8 @@ input:focus { border-color: #8fb8df; box-shadow: 0 0 0 3px rgba(77, 143, 216, .0
 .trend-profile { background: #a07c3a; }
 
 .cost-page .growth-summary { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-.cost-page .trend-chart { grid-template-columns: repeat(14, minmax(24px, 1fr)); overflow-x: auto; }
+.cost-page .trend-chart { grid-template-columns: repeat(14, minmax(24px, 1fr)); overflow-x: auto; scrollbar-width: thin; scrollbar-color: var(--line-strong) transparent; min-width: 0; }
+.trend-card { overflow: hidden; }
 .model-usage-card { padding-top: 7px; padding-bottom: 7px; }
 .codex-usage-note { margin: 8px 0 4px; padding: 8px 10px; color: var(--muted); background: var(--surface-soft); border: 1px solid var(--line); border-radius: 8px; font-size: 10px; line-height: 1.5; }
 .cost-page-subnote { margin: 8px 0 0; color: var(--muted); font-size: 10px; line-height: 1.5; }
