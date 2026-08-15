@@ -2615,7 +2615,7 @@ def _wiki_file_count(directory: str) -> int:
     try:
         return sum(
             1
-            for item in path.iterdir()
+            for item in path.rglob("*")
             if item.is_file() and not item.name.startswith(".")
         )
     except OSError:
@@ -2786,7 +2786,7 @@ def knowledge() -> dict[str, Any]:
         try:
             all_files.extend(
                 item
-                for item in path.iterdir()
+                for item in path.rglob("*")
                 if item.is_file() and not item.name.startswith(".")
             )
         except OSError:
@@ -2809,6 +2809,126 @@ def knowledge() -> dict[str, Any]:
         "trend": trend,
         "recent_commits": _wiki_git_records(limit=15),
     }
+
+
+DATA_DIR = PROJECT_ROOT / "data"
+
+
+@app.get("/api/knowledge/topics")
+def knowledge_topics() -> dict[str, Any]:
+    """返回知识库主题列表及其前 50 个文件。"""
+    index_path = DATA_DIR / "wiki_topic_index.json"
+    try:
+        with index_path.open("r", encoding="utf-8") as handle:
+            index = json.load(handle)
+    except (OSError, json.JSONDecodeError):
+        return {
+            "generated_at": None,
+            "model": None,
+            "total_files": 0,
+            "topics": [],
+        }
+
+    topics: list[dict[str, Any]] = []
+    for topic in index.get("topics", []):
+        if not isinstance(topic, dict):
+            continue
+        files = topic.get("files", [])
+        if not isinstance(files, list):
+            files = []
+        topics.append(
+            {
+                "name": topic.get("name", ""),
+                "count": topic.get("count", len(files)),
+                "files": files[:50],
+            }
+        )
+
+    return {
+        "generated_at": index.get("generated_at"),
+        "model": index.get("model"),
+        "total_files": index.get("total_files", 0),
+        "topics": topics,
+    }
+
+
+@app.get("/api/knowledge/topic/{name}")
+def knowledge_topic(name: str):
+    """返回指定主题的完整文件列表。"""
+    from urllib.parse import unquote
+
+    topic_name = unquote(name)
+    index_path = DATA_DIR / "wiki_topic_index.json"
+
+    try:
+        with index_path.open("r", encoding="utf-8") as handle:
+            index = json.load(handle)
+    except (OSError, json.JSONDecodeError):
+        return JSONResponse(
+            status_code=404,
+            content={"detail": "知识地图索引不可用"},
+        )
+
+    for topic in index.get("topics", []):
+        if not isinstance(topic, dict) or topic.get("name") != topic_name:
+            continue
+
+        raw_files = topic.get("files", [])
+        files: list[dict[str, Any]] = []
+        if isinstance(raw_files, list):
+            for item in raw_files:
+                if not isinstance(item, dict):
+                    continue
+                path = str(item.get("path", ""))
+                files.append(
+                    {
+                        "path": path,
+                        "name": Path(path).name,
+                        "reason": item.get("reason", ""),
+                    }
+                )
+
+        return {
+            "name": topic_name,
+            "count": topic.get("count", len(files)),
+            "files": files,
+        }
+
+    return JSONResponse(
+        status_code=404,
+        content={"detail": f"未找到主题：{topic_name}"},
+    )
+
+
+@app.get("/api/knowledge/graph")
+def knowledge_graph(topic: str = "") -> dict[str, Any]:
+    """概念知识图谱：节点=概念，边=双链。可选 topic 过滤。"""
+    graph_path = DATA_DIR / "wiki_graph.json"
+    try:
+        with graph_path.open("r", encoding="utf-8") as handle:
+            graph = json.load(handle)
+    except (OSError, json.JSONDecodeError):
+        return {"available": False, "nodes": [], "edges": []}
+
+    nodes = graph.get("nodes", [])
+    edges = graph.get("edges", [])
+    if not isinstance(nodes, list):
+        nodes = []
+    if not isinstance(edges, list):
+        edges = []
+
+    if topic:
+        # 过滤：只保留该主题的节点 + 两端都在内的边
+        node_ids = {n["id"] for n in nodes if n.get("topic") == topic}
+        filtered_nodes = [n for n in nodes if n.get("topic") == topic]
+        filtered_edges = [
+            e for e in edges
+            if e.get("source") in node_ids and e.get("target") in node_ids
+        ]
+        return {"available": True, "topic": topic, "nodes": filtered_nodes, "edges": filtered_edges}
+
+    return {"available": True, "nodes": nodes, "edges": edges}
+
 
 
 @app.get("/api/usage/trend")

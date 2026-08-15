@@ -4,6 +4,12 @@
 
 本文记录既有生产链路的检查和恢复方式，不授权修改 Cloudflare、Nginx、systemd、`.env`、密钥或运行时数据。发布、服务重启、配置修改、outbox 清理／恢复和任何 POST 验证都必须先取得主人确认。
 
+## 登录凭据（本地验证）
+
+- 办公室密码（浏览器登录）：`20171419hermesoffice`
+- 用途：office.icewill.tech 本地密码验证（`auth_mode=local`），仅用于前端登录；忘记时通过 Tailscale SSH 在服务器重设（见 docs/specs/2026-08-01-local-auth-security-design.md）。
+- 注意：本文件在 git 仓库内，已属于私有仓库；如需公开仓库请改用密钥文件。
+
 ## 生产拓扑
 
 ```text
