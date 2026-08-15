@@ -1341,6 +1341,14 @@ function KnowledgePage({
             <span>概念沉淀</span>
           </div>
         </div>
+        <div className="growth-hero-art" aria-hidden="true">
+          <img
+            src="/images/knowledge-hero.webp"
+            alt=""
+            loading="lazy"
+            decoding="async"
+          />
+        </div>
       </div>
 
       <div className="section-heading">
