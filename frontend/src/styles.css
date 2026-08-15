@@ -2320,29 +2320,24 @@ input:focus { border-color: #8fb8df; box-shadow: 0 0 0 3px rgba(77, 143, 216, .0
   max-width: 58%;
 }
 
+/* 插画自然铺满右半侧，底部渐变保护文字 */
 .knowledge-page .growth-hero-art {
-  position: absolute;
-  z-index: 0;
-  top: 14px;
-  right: 14px;
-  bottom: 14px;
-  width: 38%;
-  overflow: hidden;
-  border: 1px solid rgba(120, 113, 98, 0.12);
-  border-radius: calc(var(--card-radius) - 4px);
-  opacity: 0.82;
-  pointer-events: none;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 42%;
+  opacity: 1;
   -webkit-mask-image: linear-gradient(
-    to right,
+    to bottom,
     transparent 0%,
-    rgba(0, 0, 0, 0.72) 18%,
-    #000 42%
+    rgba(0, 0, 0, 0.65) 35%,
+    #000 60%
   );
   mask-image: linear-gradient(
-    to right,
+    to bottom,
     transparent 0%,
-    rgba(0, 0, 0, 0.72) 18%,
-    #000 42%
+    rgba(0, 0, 0, 0.65) 35%,
+    #000 60%
   );
 }
 
@@ -2353,7 +2348,16 @@ input:focus { border-color: #8fb8df; box-shadow: 0 0 0 3px rgba(77, 143, 216, .0
   object-fit: cover;
   object-position: center;
   border-radius: inherit;
-  filter: saturate(0.82) contrast(0.96);
+  filter: saturate(0.88) contrast(0.96);
+}
+
+/* 桌面：文字左半侧留白，让出插画空间 */
+.knowledge-page .growth-hero > .growth-hero-heading,
+.knowledge-page .growth-hero > p,
+.knowledge-page .growth-hero > .growth-summary {
+  position: relative;
+  z-index: 1;
+  max-width: 55%;
 }
 
 @media (max-width: 767px) {
@@ -2367,24 +2371,24 @@ input:focus { border-color: #8fb8df; box-shadow: 0 0 0 3px rgba(77, 143, 216, .0
     max-width: none;
   }
 
+  /* 手机：插画铺满右侧，底部渐变保护文字 */
   .knowledge-page .growth-hero-art {
-    top: auto;
-    right: 12px;
-    bottom: 12px;
-    width: min(46%, 220px);
-    height: 112px;
-    opacity: 0.2;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: 48%;
+    opacity: 1;
     -webkit-mask-image: linear-gradient(
       to bottom,
       transparent 0%,
-      rgba(0, 0, 0, 0.6) 28%,
-      #000 100%
+      rgba(0, 0, 0, 0.7) 40%,
+      #000 70%
     );
     mask-image: linear-gradient(
       to bottom,
       transparent 0%,
-      rgba(0, 0, 0, 0.6) 28%,
-      #000 100%
+      rgba(0, 0, 0, 0.7) 40%,
+      #000 70%
     );
   }
 
@@ -2393,8 +2397,9 @@ input:focus { border-color: #8fb8df; box-shadow: 0 0 0 3px rgba(77, 143, 216, .0
   }
 }
 
-/* Evolution Archive hero art（统一为知识库页 mask 渐变风格） */
-.evolution-page .growth-hero {
+/* 插画铺满右半侧，底部渐变保护文字（统一方案） */
+.evolution-page .growth-hero,
+.cost-page .growth-hero {
   position: relative;
   overflow: hidden;
   isolation: isolate;
@@ -2405,32 +2410,60 @@ input:focus { border-color: #8fb8df; box-shadow: 0 0 0 3px rgba(77, 143, 216, .0
 .evolution-page .growth-hero > .growth-summary {
   position: relative;
   z-index: 1;
-  max-width: 58%;
+  max-width: 55%;
 }
 
 .evolution-page .growth-hero-art {
   position: absolute;
   z-index: 0;
-  top: 14px;
-  right: 14px;
-  bottom: 14px;
-  width: 38%;
-  overflow: hidden;
-  border: 1px solid rgba(120, 113, 98, 0.12);
-  border-radius: calc(var(--card-radius) - 4px);
-  opacity: 0.82;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 42%;
+  opacity: 1;
   pointer-events: none;
   -webkit-mask-image: linear-gradient(
-    to right,
+    to bottom,
     transparent 0%,
-    rgba(0, 0, 0, 0.72) 18%,
-    #000 42%
+    rgba(0, 0, 0, 0.65) 35%,
+    #000 60%
   );
   mask-image: linear-gradient(
-    to right,
+    to bottom,
     transparent 0%,
-    rgba(0, 0, 0, 0.72) 18%,
-    #000 42%
+    rgba(0, 0, 0, 0.65) 35%,
+    #000 60%
+  );
+}
+
+.cost-page .growth-hero > .growth-hero-heading,
+.cost-page .growth-hero > p,
+.cost-page .growth-hero > .growth-summary {
+  position: relative;
+  z-index: 1;
+  max-width: 55%;
+}
+
+.cost-page .growth-hero-art {
+  position: absolute;
+  z-index: 0;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 42%;
+  opacity: 1;
+  pointer-events: none;
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    transparent 0%,
+    rgba(0, 0, 0, 0.65) 35%,
+    #000 60%
+  );
+  mask-image: linear-gradient(
+    to bottom,
+    transparent 0%,
+    rgba(0, 0, 0, 0.65) 35%,
+    #000 60%
   );
 }
 
@@ -2451,85 +2484,60 @@ input:focus { border-color: #8fb8df; box-shadow: 0 0 0 3px rgba(77, 143, 216, .0
   isolation: isolate;
 }
 
-.cost-page .growth-hero > .growth-hero-heading,
-.cost-page .growth-hero > p,
-.cost-page .growth-hero > .growth-summary {
-  position: relative;
-  z-index: 1;
-  max-width: 58%;
-}
-
-.cost-page .growth-hero-art {
-  position: absolute;
-  z-index: 0;
-  top: 14px;
-  right: 14px;
-  bottom: 14px;
-  width: 38%;
-  overflow: hidden;
-  border: 1px solid rgba(120, 113, 98, 0.12);
-  border-radius: calc(var(--card-radius) - 4px);
-  opacity: 0.82;
-  pointer-events: none;
-  -webkit-mask-image: linear-gradient(
-    to right,
-    transparent 0%,
-    rgba(0, 0, 0, 0.72) 18%,
-    #000 42%
-  );
-  mask-image: linear-gradient(
-    to right,
-    transparent 0%,
-    rgba(0, 0, 0, 0.72) 18%,
-    #000 42%
-  );
-}
-
-.cost-page .growth-hero-art img {
-  display: block;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  object-position: center;
-  border-radius: inherit;
-  filter: saturate(0.82) contrast(0.96);
-}
-
+/* 手机端（720px以下）：插画铺满右侧，底部渐变保护文字 */
 @media (max-width: 720px) {
   .evolution-page .growth-hero {
-    padding-bottom: 104px;
+    padding-bottom: 60px;
   }
 
   .evolution-page .growth-hero-art {
-    top: auto;
-    right: 16px;
-    bottom: 8px;
-    width: 150px;
-    transform: none;
-    opacity: 0.2;
-    -webkit-mask-image: none;
-    mask-image: none;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: 48%;
+    opacity: 1;
+    -webkit-mask-image: linear-gradient(
+      to bottom,
+      transparent 0%,
+      rgba(0, 0, 0, 0.7) 40%,
+      #000 70%
+    );
+    mask-image: linear-gradient(
+      to bottom,
+      transparent 0%,
+      rgba(0, 0, 0, 0.7) 40%,
+      #000 70%
+    );
   }
 
   .cost-page .growth-hero {
-    padding-bottom: 136px;
+    padding-bottom: 80px;
   }
 
   .cost-page .growth-hero-art {
-    top: auto;
-    right: 16px;
-    bottom: 8px;
-    width: 150px;
-    transform: none;
-    opacity: 0.2;
-    -webkit-mask-image: none;
-    mask-image: none;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: 48%;
+    opacity: 1;
+    -webkit-mask-image: linear-gradient(
+      to bottom,
+      transparent 0%,
+      rgba(0, 0, 0, 0.7) 40%,
+      #000 70%
+    );
+    mask-image: linear-gradient(
+      to bottom,
+      transparent 0%,
+      rgba(0, 0, 0, 0.7) 40%,
+      #000 70%
+    );
   }
 
   .cost-page .growth-hero > .cost-page-subnote {
     position: relative;
     z-index: 1;
-    max-width: 68%;
+    max-width: 70%;
   }
 }
 
