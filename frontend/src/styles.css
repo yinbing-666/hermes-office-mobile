@@ -2362,3 +2362,85 @@ input:focus { border-color: #8fb8df; box-shadow: 0 0 0 3px rgba(77, 143, 216, .0
     object-position: center;
   }
 }
+
+/* Evolution Archive hero art (Luna 方案) */
+.evolution-page .growth-hero {
+  position: relative;
+  overflow: hidden;
+}
+
+.evolution-page .growth-hero-art {
+  position: absolute;
+  z-index: 0;
+  top: 50%;
+  right: 24px;
+  width: 260px;
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+
+.evolution-page .growth-hero-art img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.evolution-page .growth-hero > *:not(.growth-hero-art) {
+  position: relative;
+  z-index: 1;
+}
+
+/* Cost Center hero art (Luna 方案) */
+.cost-page .growth-hero {
+  position: relative;
+  overflow: hidden;
+}
+
+.cost-page .growth-hero-art {
+  position: absolute;
+  z-index: 0;
+  top: 50%;
+  right: 24px;
+  width: 260px;
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+
+.cost-page .growth-hero-art img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.cost-page .growth-hero > *:not(.growth-hero-art) {
+  position: relative;
+  z-index: 1;
+}
+
+@media (max-width: 720px) {
+  .evolution-page .growth-hero {
+    padding-bottom: 104px;
+  }
+
+  .evolution-page .growth-hero-art {
+    top: auto;
+    right: 16px;
+    bottom: 8px;
+    width: 150px;
+    transform: none;
+    opacity: 0.2;
+  }
+
+  .cost-page .growth-hero {
+    padding-bottom: 136px;
+  }
+
+  .cost-page .growth-hero-art {
+    top: auto;
+    right: 16px;
+    bottom: 8px;
+    width: 150px;
+    transform: none;
+    opacity: 0.2;
+  }
+}

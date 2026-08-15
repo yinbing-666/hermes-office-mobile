@@ -836,6 +836,9 @@ function EvolutionPage({ evolution, growth, growthState, onRetryGrowth }: { evol
           <div><strong>{profiles.length ? `${readyProfiles}/${profiles.length}` : '暂无'}</strong><span>档案完整</span></div>
           <div><strong>{formatTime(latestEvolution)}</strong><span>最近进化</span></div>
         </div>
+        <div className="growth-hero-art" aria-hidden="true">
+          <img src="/images/growth-hero.webp" alt="" loading="lazy" decoding="async" />
+        </div>
       </div>
 
       <div className="section-heading"><div><p className="section-kicker">Growth Records</p><h2>成长记录</h2></div><span>{growthState.status === 'loading' ? '加载中' : growthState.status === 'error' ? '加载失败' : growth.total ? `${growth.total} 条真实记录` : '待记录'}</span></div>
@@ -1646,6 +1649,9 @@ function CostPage({ usageTrend, tokenUsage, codexUsage, resourceState, onRetry }
           <div><strong>${(tokenUsage.total?.cost_usd ?? 0).toFixed(2)}</strong><span>今日成本</span></div>
         </div>
         <p className="cost-page-subnote">缓存命中 {formatTokens(todayCacheTokens)}（已计入总消耗）· 价格按 litellm 官方定价估算</p>
+        <div className="growth-hero-art" aria-hidden="true">
+          <img src="/images/cost-hero.webp" alt="" loading="lazy" decoding="async" />
+        </div>
       </div>
 
       <div className="section-heading"><div><p className="section-kicker">Usage Trend</p><h2>近 14 天 Token 趋势</h2></div></div>
