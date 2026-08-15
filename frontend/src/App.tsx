@@ -1216,7 +1216,7 @@ function KnowledgePage({
       })())
       .stop();
 
-    for (let i = 0; i < 250; i += 1) simulation.tick();
+    for (let i = 0; i < 100; i += 1) simulation.tick();
 
     // 归一化坐标到 ±180 范围，避免 fitView 缩得太小（针尖节点）
     const xs = initialNodes.map((n) => n.x);

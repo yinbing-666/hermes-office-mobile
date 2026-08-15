@@ -420,8 +420,11 @@ export function WorkflowPage() {
   }, []);
 
   useEffect(() => {
-    window.localStorage.setItem(STORAGE_NODES, JSON.stringify(nodes));
-    window.localStorage.setItem(STORAGE_EDGES, JSON.stringify(edges));
+    const debounce = window.setTimeout(() => {
+      window.localStorage.setItem(STORAGE_NODES, JSON.stringify(nodes));
+      window.localStorage.setItem(STORAGE_EDGES, JSON.stringify(edges));
+    }, 400);
+    return () => window.clearTimeout(debounce);
   }, [edges, nodes]);
 
   useEffect(() => {
