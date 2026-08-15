@@ -2393,58 +2393,106 @@ input:focus { border-color: #8fb8df; box-shadow: 0 0 0 3px rgba(77, 143, 216, .0
   }
 }
 
-/* Evolution Archive hero art (Luna 方案) */
+/* Evolution Archive hero art（统一为知识库页 mask 渐变风格） */
 .evolution-page .growth-hero {
   position: relative;
   overflow: hidden;
+  isolation: isolate;
+}
+
+.evolution-page .growth-hero > .growth-hero-heading,
+.evolution-page .growth-hero > p,
+.evolution-page .growth-hero > .growth-summary {
+  position: relative;
+  z-index: 1;
+  max-width: 58%;
 }
 
 .evolution-page .growth-hero-art {
   position: absolute;
   z-index: 0;
-  top: 50%;
-  right: 24px;
-  width: 260px;
-  transform: translateY(-50%);
+  top: 14px;
+  right: 14px;
+  bottom: 14px;
+  width: 38%;
+  overflow: hidden;
+  border: 1px solid rgba(120, 113, 98, 0.12);
+  border-radius: calc(var(--card-radius) - 4px);
+  opacity: 0.82;
   pointer-events: none;
+  -webkit-mask-image: linear-gradient(
+    to right,
+    transparent 0%,
+    rgba(0, 0, 0, 0.72) 18%,
+    #000 42%
+  );
+  mask-image: linear-gradient(
+    to right,
+    transparent 0%,
+    rgba(0, 0, 0, 0.72) 18%,
+    #000 42%
+  );
 }
 
 .evolution-page .growth-hero-art img {
   display: block;
   width: 100%;
-  height: auto;
+  height: 100%;
+  object-fit: cover;
+  object-position: center;
+  border-radius: inherit;
+  filter: saturate(0.82) contrast(0.96);
 }
 
-.evolution-page .growth-hero > *:not(.growth-hero-art) {
-  position: relative;
-  z-index: 1;
-}
-
-/* Cost Center hero art (Luna 方案) */
+/* Cost Center hero art（统一为知识库页 mask 渐变风格） */
 .cost-page .growth-hero {
   position: relative;
   overflow: hidden;
+  isolation: isolate;
+}
+
+.cost-page .growth-hero > .growth-hero-heading,
+.cost-page .growth-hero > p,
+.cost-page .growth-hero > .growth-summary {
+  position: relative;
+  z-index: 1;
+  max-width: 58%;
 }
 
 .cost-page .growth-hero-art {
   position: absolute;
   z-index: 0;
-  top: 50%;
-  right: 24px;
-  width: 260px;
-  transform: translateY(-50%);
+  top: 14px;
+  right: 14px;
+  bottom: 14px;
+  width: 38%;
+  overflow: hidden;
+  border: 1px solid rgba(120, 113, 98, 0.12);
+  border-radius: calc(var(--card-radius) - 4px);
+  opacity: 0.82;
   pointer-events: none;
+  -webkit-mask-image: linear-gradient(
+    to right,
+    transparent 0%,
+    rgba(0, 0, 0, 0.72) 18%,
+    #000 42%
+  );
+  mask-image: linear-gradient(
+    to right,
+    transparent 0%,
+    rgba(0, 0, 0, 0.72) 18%,
+    #000 42%
+  );
 }
 
 .cost-page .growth-hero-art img {
   display: block;
   width: 100%;
-  height: auto;
-}
-
-.cost-page .growth-hero > *:not(.growth-hero-art) {
-  position: relative;
-  z-index: 1;
+  height: 100%;
+  object-fit: cover;
+  object-position: center;
+  border-radius: inherit;
+  filter: saturate(0.82) contrast(0.96);
 }
 
 @media (max-width: 720px) {
@@ -2459,6 +2507,8 @@ input:focus { border-color: #8fb8df; box-shadow: 0 0 0 3px rgba(77, 143, 216, .0
     width: 150px;
     transform: none;
     opacity: 0.2;
+    -webkit-mask-image: none;
+    mask-image: none;
   }
 
   .cost-page .growth-hero {
@@ -2472,6 +2522,14 @@ input:focus { border-color: #8fb8df; box-shadow: 0 0 0 3px rgba(77, 143, 216, .0
     width: 150px;
     transform: none;
     opacity: 0.2;
+    -webkit-mask-image: none;
+    mask-image: none;
+  }
+
+  .cost-page .growth-hero > .cost-page-subnote {
+    position: relative;
+    z-index: 1;
+    max-width: 68%;
   }
 }
 
