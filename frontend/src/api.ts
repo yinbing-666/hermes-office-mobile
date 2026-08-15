@@ -1,4 +1,4 @@
-import type { ActivityItem, AgentInfo, ApiState, CronJob, DelegationTasksData, EvolutionData, GrowthData, KnowledgeData, MessageResponse, OutboxData, OutboxRetryResponse, TaskItem, TasksData, UsageTrendData } from './types';
+import type { ActivityItem, AgentInfo, ApiState, CronJob, DelegationTasksData, EvolutionData, GrowthData, KnowledgeData, MessageResponse, OutboxData, OutboxRetryResponse, TaskItem, TasksData, TopicData, TopicDetailData, UsageTrendData } from './types';
 
 export type SessionData = {
   ok: boolean;
@@ -329,6 +329,49 @@ export async function fetchKnowledge() {
     total: 0,
     trend: [],
     recent_commits: [],
+  });
+}
+
+export async function fetchKbTopics() {
+  return getJson<TopicData>('/api/knowledge/topics', {
+    available: false,
+    generated_at: '',
+    total: 0,
+    topics: [],
+  });
+}
+
+export async function fetchKbTopicDetail(name: string) {
+  return getJson<TopicDetailData>(`/api/knowledge/topic/${encodeURIComponent(name)}`, {
+    available: false,
+    name,
+    count: 0,
+    files: [],
+  });
+}
+
+export interface KnowledgeGraphNode {
+  id: string;
+  topic: string;
+}
+
+export interface KnowledgeGraphEdge {
+  source: string;
+  target: string;
+}
+
+export interface KnowledgeGraphPayload {
+  available: boolean;
+  nodes: KnowledgeGraphNode[];
+  edges: KnowledgeGraphEdge[];
+}
+
+export async function fetchKbGraph(topic?: string) {
+  const search = topic ? `?topic=${encodeURIComponent(topic)}` : '';
+  return getJson<KnowledgeGraphPayload>(`/api/knowledge/graph${search}`, {
+    available: false,
+    nodes: [],
+    edges: [],
   });
 }
 

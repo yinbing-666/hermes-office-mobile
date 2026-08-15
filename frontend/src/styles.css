@@ -1715,12 +1715,12 @@ input:focus { border-color: #8fb8df; box-shadow: 0 0 0 3px rgba(77, 143, 216, .0
 }
 
 .km-topic-card {
-  --km-topic-color: #8b9aab;
-
-  position: relative;
-  min-height: 132px;
-  padding: 16px 16px 14px 20px;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding: 0;
   overflow: hidden;
+  text-align: left;
   background: #fff;
   border: 1px solid #e5e5e5;
   border-radius: 12px;
@@ -1732,14 +1732,62 @@ input:focus { border-color: #8fb8df; box-shadow: 0 0 0 3px rgba(77, 143, 216, .0
     border-color 160ms ease;
 }
 
-.km-topic-card::before {
+/* 主题封面图：固定宽高比容器，防止图片加载时的布局抖动（CLS） */
+.km-topic-cover {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 10;
+  overflow: hidden;
+  background: linear-gradient(135deg, #eef2f6 0%, #dbe4ee 100%);
+}
+
+/* 底层占位：图片缺失或加载失败时露出 */
+.km-topic-cover-fallback {
   position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 0;
-  width: 4px;
-  background: var(--km-topic-color);
-  content: "";
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: #9aa8ba;
+}
+
+/* 封面图叠在占位之上；成功加载即完全覆盖占位 */
+.km-topic-cover-img {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 320ms ease;
+}
+
+.km-topic-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 14px 14px;
+}
+
+.km-topic-body strong {
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 650;
+  line-height: 1.4;
+}
+
+.km-topic-body small {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.km-topic-body p {
+  display: -webkit-box;
+  margin: 4px 0 0;
+  overflow: hidden;
+  color: #666;
+  font-size: 12px;
+  line-height: 1.5;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 
 .km-topic-card:hover {
@@ -1748,36 +1796,13 @@ input:focus { border-color: #8fb8df; box-shadow: 0 0 0 3px rgba(77, 143, 216, .0
   transform: translateY(-2px);
 }
 
+.km-topic-card:hover .km-topic-cover-img {
+  transform: scale(1.04);
+}
+
 .km-topic-card:focus-visible {
   outline: 2px solid #8bb8e8;
   outline-offset: 2px;
-}
-
-.km-topic-name {
-  margin: 0;
-  color: #2f3437;
-  font-size: 16px;
-  font-weight: 600;
-  line-height: 1.45;
-}
-
-.km-topic-count {
-  display: block;
-  margin-top: 5px;
-  color: #888;
-  font-size: 12px;
-  line-height: 1.4;
-}
-
-.km-topic-reason {
-  display: -webkit-box;
-  margin: 10px 0 0;
-  overflow: hidden;
-  color: #666;
-  font-size: 13px;
-  line-height: 1.55;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
 }
 
 .km-detail-header {

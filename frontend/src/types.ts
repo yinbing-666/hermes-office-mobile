@@ -182,6 +182,32 @@ export interface KnowledgeData {
   recent_commits: GrowthRecord[];
 }
 
+export interface TopicFile {
+  name: string;
+  path: string;
+  reason: string;
+}
+
+export interface TopicSummary {
+  name: string;
+  count: number;
+  files: TopicFile[];
+}
+
+export interface TopicData {
+  available: boolean;
+  generated_at: string;
+  total: number;
+  topics: TopicSummary[];
+}
+
+export interface TopicDetailData {
+  available: boolean;
+  name: string;
+  count: number;
+  files: TopicFile[];
+}
+
 export interface UsageDay {
   date: string;
   input_tokens: number;

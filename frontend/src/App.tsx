@@ -1389,25 +1389,36 @@ function KnowledgePage({
             <div className="km-topic-grid">
               {topics.map((topic) => {
                 const firstFile = topic.files?.[0];
+                const coverSrc = `/images/topics/${encodeURIComponent(topic.name)}.webp`;
 
                 return (
                   <button
                     type="button"
-                    className="capability-card km-topic-card"
+                    className="km-topic-card"
                     key={topic.name}
                     onClick={() => openTopic(topic)}
                   >
-                    <div className="capability-icon km-topic-icon">
-                      <OfficeIcon name="search" size={18} />
+                    <div className="km-topic-cover">
+                      <div className="km-topic-cover-fallback" aria-hidden="true">
+                        <OfficeIcon name="search" size={24} />
+                      </div>
+                      <img
+                        className="km-topic-cover-img"
+                        src={coverSrc}
+                        alt={`${topic.name} 主题插画`}
+                        loading="lazy"
+                        decoding="async"
+                        onError={(e) => {
+                          // 封面图缺失时隐藏 img，露出底层渐变占位（无需逐卡状态）
+                          e.currentTarget.style.display = 'none';
+                        }}
+                      />
                     </div>
-                    <div className="km-topic-content">
+                    <div className="km-topic-body">
                       <strong>{topic.name}</strong>
                       <small>{topic.fileCount} 个文件</small>
                       <p>{firstFile?.reason ?? '暂无主题描述'}</p>
                     </div>
-                    <span className="km-topic-arrow" aria-hidden="true">
-                      →
-                    </span>
                   </button>
                 );
               })}
