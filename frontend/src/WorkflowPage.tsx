@@ -342,11 +342,10 @@ export function WorkflowPage() {
 
   const onCanvasClick = useCallback((event: ReactMouseEvent<HTMLDivElement>) => {
     if (!canvasRef.current || selectedNodeId || isConnecting || isDragging) return;
-    const rect = canvasRef.current.getBoundingClientRect();
-    const x = event.clientX - rect.left;
-    const y = event.clientY - rect.top;
-    addNode('llm', x, y);
-  }, [addNode, isConnecting, isDragging, selectedNodeId]);
+    // Clicking empty canvas now clears selection instead of adding a node
+    // (prevents spurious node creation after pointerup from a drag/connect)
+    setSelectedNodeId(null);
+  }, [isConnecting, isDragging, selectedNodeId]);
 
   const onNodePointerDown = useCallback((id: string, event: ReactPointerEvent, isPort = false) => {
     event.stopPropagation();
@@ -427,6 +426,13 @@ export function WorkflowPage() {
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
+      // Don't fire when user is typing in an input/textarea/contentEditable
+      const target = event.target as HTMLElement;
+      if (
+        target instanceof HTMLInputElement ||
+        target instanceof HTMLTextAreaElement ||
+        target.isContentEditable
+      ) return;
       if (event.key === 'Delete' && selectedNodeId) {
         deleteNode(selectedNodeId);
       }

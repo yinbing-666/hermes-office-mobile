@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Background,
   Controls,
@@ -1094,7 +1094,11 @@ function KnowledgePage({
     };
   }, [resourceState.status]);
 
+  // Track in-flight request to prevent race conditions on rapid topic clicks
+  const openTopicRequestId = useRef(0);
   const openTopic = async (topic: KnowledgeTopic) => {
+    openTopicRequestId.current += 1;
+    const myId = openTopicRequestId.current;
     setSelectedTopic(topic);
     setSelectedConcept(null);
     setGraph(null);
@@ -1104,11 +1108,17 @@ function KnowledgePage({
 
     try {
       const payload = await fetchKbGraph(topic.name);
-      setGraph(payload.data ?? payload);
+      if (myId === openTopicRequestId.current) {
+        setGraph(payload.data ?? payload);
+      }
     } catch {
-      setGraphError('知识图谱加载失败，请返回后重试。');
+      if (myId === openTopicRequestId.current) {
+        setGraphError('知识图谱加载失败，请返回后重试。');
+      }
     } finally {
-      setGraphLoading(false);
+      if (myId === openTopicRequestId.current) {
+        setGraphLoading(false);
+      }
     }
   };
 
@@ -1848,23 +1858,33 @@ export default function App() {
       return;
     }
     setLoading(true);
-    Promise.all([fetchHealth(), fetchAgents(), fetchEvolution(), fetchTasks(), loadGrowth(), loadKnowledge(), loadCost()]).then(([healthRes, agentRes, evolutionRes, taskRes]) => {
-      setAgents(agentRes.data.agents);
-      setSelectedId((current) => (
-        current && agentRes.data.agents.some((agent) => agent.id === current)
-          ? current
-          : agentRes.data.agents[0]?.id ?? 'default'
-      ));
-      setEvolution(evolutionRes.data);
-      setTasks(taskRes.data.items ?? []);
-      setOffline(healthRes.offline);
+    Promise.allSettled([fetchHealth(), fetchAgents(), fetchEvolution(), fetchTasks(), loadGrowth(), loadKnowledge(), loadCost()]).then((results) => {
+      const healthResult = results[0];
+      const agentResult = results[1];
+      const evolutionResult = results[2];
+      const taskResult = results[3];
+      if (agentResult.status === 'fulfilled') {
+        setAgents(agentResult.value.data.agents);
+        setSelectedId((current) => (
+          current && agentResult.value.data.agents.some((agent) => agent.id === current)
+            ? current
+            : agentResult.value.data.agents[0]?.id ?? 'default'
+        ));
+      }
+      if (evolutionResult.status === 'fulfilled') setEvolution(evolutionResult.value.data);
+      if (taskResult.status === 'fulfilled') setTasks(taskResult.value.data.items ?? []);
+      if (healthResult.status === 'fulfilled') setOffline(healthResult.value.offline);
+      const authError = results.find(r => r.status === 'rejected' && r.reason instanceof Error && /登录|权限/.test(r.reason.message));
+      if (authError && authError.status === 'rejected') setAuthError(authError.reason.message);
     }).catch((error) => {
       if (error instanceof Error && /登录|权限/.test(error.message)) setAuthError(error.message);
     }).finally(() => setLoading(false));
   }, [session?.authenticated]);
 
-  // URL sync for agent view on load
+  // URL sync for agent view on load — only fire once via ref guard
+  const urlSyncRef = useRef(false);
   useEffect(() => {
+    if (urlSyncRef.current) return;
     const params = new URLSearchParams(window.location.search);
     const view = params.get('view');
     const id = params.get('id');
@@ -1874,6 +1894,7 @@ export default function App() {
         setSelectedId(id);
         setTab('agent');
         setCameFromOffice(true);
+        urlSyncRef.current = true;
       }
     }
   }, [agents]);

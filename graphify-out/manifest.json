@@ -1,0 +1,87 @@
+{
+  "backend/main.py": {
+    "mtime": 1785125006.447164,
+    "ast_hash": "2c72d1144765276e8c0dc482c6c82c3e",
+    "semantic_hash": "2c72d1144765276e8c0dc482c6c82c3e"
+  },
+  "frontend/package.json": {
+    "mtime": 1784234404.1823905,
+    "ast_hash": "ee62a1f6695a050aa6b8859be290fc5a",
+    "semantic_hash": "ee62a1f6695a050aa6b8859be290fc5a"
+  },
+  "frontend/public/manifest.json": {
+    "mtime": 1784117171.8657618,
+    "ast_hash": "031e8c23fad93f0720d213655f6babe2",
+    "semantic_hash": "031e8c23fad93f0720d213655f6babe2"
+  },
+  "frontend/public/sw.js": {
+    "mtime": 1784117171.8667617,
+    "ast_hash": "7ccecb7e14a1294d6145c597c50253a9",
+    "semantic_hash": "7ccecb7e14a1294d6145c597c50253a9"
+  },
+  "frontend/public/topics.json": {
+    "mtime": 1785150106.9485712,
+    "ast_hash": "824d45e4181fa4f6879700e733356f3a",
+    "semantic_hash": "824d45e4181fa4f6879700e733356f3a"
+  },
+  "frontend/react-input-cdp-test.cjs": {
+    "mtime": 1784109546.1015992,
+    "ast_hash": "e562860c0bff363cda59827af554156a",
+    "semantic_hash": "e562860c0bff363cda59827af554156a"
+  },
+  "frontend/src/App.tsx": {
+    "mtime": 1785124974.1142287,
+    "ast_hash": "a1aab0b256feb619b1ae6debcd890b2d",
+    "semantic_hash": "a1aab0b256feb619b1ae6debcd890b2d"
+  },
+  "frontend/src/WorkflowPage.tsx": {
+    "mtime": 1784749652.949384,
+    "ast_hash": "8945e51e66b1193901c4952e499ad5b7",
+    "semantic_hash": "8945e51e66b1193901c4952e499ad5b7"
+  },
+  "frontend/src/api.ts": {
+    "mtime": 1785073764.7646666,
+    "ast_hash": "c844ebc302eb1d27a9d2a7d394119771",
+    "semantic_hash": "c844ebc302eb1d27a9d2a7d394119771"
+  },
+  "frontend/src/components/OfficeIcon.tsx": {
+    "mtime": 1784392059.0397336,
+    "ast_hash": "4f582b790677d742905940cc3e4e873b",
+    "semantic_hash": "4f582b790677d742905940cc3e4e873b"
+  },
+  "frontend/src/main.tsx": {
+    "mtime": 1784103484.584917,
+    "ast_hash": "b1ab75fc9ee6e57474258f10e9617643",
+    "semantic_hash": "b1ab75fc9ee6e57474258f10e9617643"
+  },
+  "frontend/src/types.ts": {
+    "mtime": 1784778321.3761098,
+    "ast_hash": "20de83ebefc1dded4a9df7c6c885889a",
+    "semantic_hash": "20de83ebefc1dded4a9df7c6c885889a"
+  },
+  "frontend/src/vite-env.d.ts": {
+    "mtime": 1784103950.0659132,
+    "ast_hash": "0352474ba2918efe13895edbc3780d94",
+    "semantic_hash": "0352474ba2918efe13895edbc3780d94"
+  },
+  "frontend/tsconfig.json": {
+    "mtime": 1784103646.717679,
+    "ast_hash": "aacbd3ecce0e2f47a3dfd89312c4cb89",
+    "semantic_hash": "aacbd3ecce0e2f47a3dfd89312c4cb89"
+  },
+  "frontend/vite.config.ts": {
+    "mtime": 1784600810.8130615,
+    "ast_hash": "6252274270b468473412e85c38c38f20",
+    "semantic_hash": "6252274270b468473412e85c38c38f20"
+  },
+  "frontend/worker/index.ts": {
+    "mtime": 1785151321.4416568,
+    "ast_hash": "9b6b12961b77128bd62051f23c37bfb7",
+    "semantic_hash": "9b6b12961b77128bd62051f23c37bfb7"
+  },
+  "react-input-cdp-test.js": {
+    "mtime": 1784273770.5853195,
+    "ast_hash": "99f35fd4ddeb19f6703b0c68ae6567d7",
+    "semantic_hash": "99f35fd4ddeb19f6703b0c68ae6567d7"
+  }
+}
