@@ -2,7 +2,9 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   Background,
   Controls,
+  Handle,
   MarkerType,
+  Position,
   ReactFlow,
   type Edge,
   type Node,
@@ -1010,7 +1012,10 @@ function ConceptNode({ data, selected }: { data: { label: string; core: boolean;
     <div
       className={`concept-node${data.core ? ' is-core' : ''}${data.showLabel || selected ? ' show-label' : ''}`}
     >
+      {/* React Flow 11 自定义节点必须有 Handle 才能渲染边 */}
+      <Handle type="target" position={Position.Left} style={{ opacity: 0, pointerEvents: 'none', border: 'none', background: 'transparent' }} />
       <span className="concept-node-label">{data.label}</span>
+      <Handle type="source" position={Position.Right} style={{ opacity: 0, pointerEvents: 'none', border: 'none', background: 'transparent' }} />
     </div>
   );
 }
@@ -1243,30 +1248,53 @@ function KnowledgePage({
 
   const graphEdges = useMemo<Edge[]>(() => {
     if (!graph) return [];
-    return graph.edges
-      .filter((edge) => graphLayout.visibleIds.has(edge.source) && graphLayout.visibleIds.has(edge.target))
-      .map((edge) => {
-        const isFocused = focusNode === edge.source || focusNode === edge.target;
+
+    // 以最终传给 React Flow 的 graphNodes 为准（Luna 诊断：过滤基准必须一致）
+    const nodeIds = new Set(graphNodes.map((node) => String(node.id)));
+
+    const seenEdgeIds = new Set<string>();
+
+    const edges = graph.edges
+      .map((edge, index) => {
+        const source = String(edge.source);
+        const target = String(edge.target);
+
+        if (!nodeIds.has(source) || !nodeIds.has(target)) {
+          return null;
+        }
+
+        // 唯一 edge id（Luna 诊断：概念名含 - 或双向边会导致 id 冲突）
+        const baseId = `kg-edge-${index}`;
+        let id = baseId;
+        while (seenEdgeIds.has(id)) {
+          id = `${baseId}-${Math.random().toString(36).slice(2, 6)}`;
+        }
+        seenEdgeIds.add(id);
+
+        const isFocused = focusNode === source || focusNode === target;
         return {
-          id: `${edge.source}-${edge.target}`,
-          source: edge.source,
-          target: edge.target,
+          id,
+          source,
+          target,
           type: 'smoothstep',
           style: {
-            stroke: '#c9ccd2',
-            strokeWidth: 0.7,
-            opacity: focusNode ? (isFocused ? 0.9 : 0.12) : 0.4,
+            stroke: isFocused ? '#6d8fc9' : '#9db4d8',
+            strokeWidth: isFocused ? 1.6 : 1,
+            opacity: focusNode ? (isFocused ? 1 : 0.25) : 0.7,
             transition: 'opacity 160ms ease',
           },
           markerEnd: {
             type: MarkerType.ArrowClosed,
-            color: '#c9ccd2',
-            width: 10,
-            height: 10,
+            color: isFocused ? '#6d8fc9' : '#9db4d8',
+            width: 12,
+            height: 12,
           },
-        };
-      });
-  }, [graph, graphLayout, focusNode]);
+        } as Edge;
+      })
+      .filter((edge): edge is Edge => edge !== null);
+
+    return edges;
+  }, [graph, graphNodes, focusNode]);
 
   const selectedConceptInfo = useMemo(() => {
     if (!selectedConcept || !graph) return null;
@@ -1345,7 +1373,7 @@ function KnowledgePage({
                   setTopicsError('');
                   setTopicsLoading(true);
                   fetchKbTopics()
-                    .then((payload) => setTopics(normalizeTopics(payload)))
+                    .then((payload) => setTopics(normalizeTopics(payload.data ?? payload)))
                     .catch(() => setTopicsError('主题地图加载失败，请稍后重试。'))
                     .finally(() => setTopicsLoading(false));
                 }}
@@ -1416,7 +1444,7 @@ function KnowledgePage({
               <div className="kg-layout">
               <div className="kg-container">
                 <ReactFlow
-                  key={`${selectedTopic}-${showAll}-${isMobile}`}
+                  key={`${selectedTopic?.name ?? 'none'}-${showAll}-${isMobile}`}
                   nodes={graphNodes}
                   edges={graphEdges}
                   nodeTypes={conceptNodeTypes}
