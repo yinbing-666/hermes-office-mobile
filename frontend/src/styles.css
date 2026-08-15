@@ -596,7 +596,10 @@ input:focus { border-color: #8fb8df; box-shadow: 0 0 0 3px rgba(77, 143, 216, .0
 .trend-skill { background: #4a7fad; }
 .trend-profile { background: #a07c3a; }
 
-.cost-page .growth-summary { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.cost-page .growth-summary { grid-template-columns: repeat(4, minmax(0, 1fr)); border-radius: var(--radius-card); }
+.cost-page .cost-metric { grid-template-columns: 24px minmax(0, 1fr); gap: 8px; align-items: center; }
+.cost-page .cost-metric > .office-icon { color: var(--brand); }
+.cost-page .cost-metric > div { min-width: 0; display: grid; gap: 5px; }
 .cost-page .trend-chart { grid-template-columns: repeat(14, minmax(24px, 1fr)); overflow-x: auto; scrollbar-width: thin; scrollbar-color: var(--line-strong) transparent; min-width: 0; }
 .trend-card { overflow: hidden; }
 .model-usage-card { padding-top: 7px; padding-bottom: 7px; }
@@ -2030,6 +2033,20 @@ input:focus { border-color: #8fb8df; box-shadow: 0 0 0 3px rgba(77, 143, 216, .0
   border-radius: 0;
 }
 
+.kg-canvas-card {
+  min-width: 0;
+  padding: var(--space-3);
+  background: var(--surface);
+  border: var(--card-border);
+  border-radius: var(--radius-card);
+  box-shadow: var(--card-shadow);
+}
+
+.kg-canvas-card .kg-container {
+  border: 0;
+  border-radius: var(--radius-md);
+}
+
 .kg-node {
   padding: 8px 10px;
   color: #444;
@@ -2206,10 +2223,10 @@ input:focus { border-color: #8fb8df; box-shadow: 0 0 0 3px rgba(77, 143, 216, .0
   min-height: 100%;
   padding: 7px 12px;
   box-sizing: border-box;
-  border-radius: 7px;
-  background: #fffefa;
-  border: 1px solid #a9bdd3;
-  box-shadow: 0 1px 2px rgba(37, 54, 72, 0.05);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  border: 1px solid var(--brand-line);
+  box-shadow: var(--card-shadow);
 }
 
 .concept-node.is-core .concept-node-label {
@@ -2295,7 +2312,8 @@ input:focus { border-color: #8fb8df; box-shadow: 0 0 0 3px rgba(77, 143, 216, .0
 .kg-layout {
   display: grid;
   grid-template-columns: 1fr 260px;
-  gap: 0;
+  gap: var(--space-3);
+  padding: 0 var(--space-3) var(--space-3);
   min-height: 520px;
 }
 
@@ -2369,8 +2387,9 @@ input:focus { border-color: #8fb8df; box-shadow: 0 0 0 3px rgba(77, 143, 216, .0
   .kg-panel {
     position: relative;
     max-height: none;
-    border-top: 1px solid #e1e4e3;
-    border-radius: 0;
+    border: var(--card-border);
+    border-radius: var(--radius-card);
+    box-shadow: var(--card-shadow);
   }
 }
 

@@ -1594,43 +1594,45 @@ function KnowledgePage({
                 </button>
               </div>
               <div className="kg-layout">
-              <div className="kg-container">
-                <ReactFlow
-                  key={`${selectedTopic?.name ?? 'none'}-${isMobile}`}
-                  nodes={graphNodes}
-                  edges={graphEdges}
-                  nodeTypes={conceptNodeTypes}
-                  minZoom={0.4}
-                  maxZoom={2.5}
-                  onInit={(instance: ReactFlowInstance) => {
-                    graphInstanceRef.current = instance;
-                    requestAnimationFrame(() => {
-                      void instance.fitView({
-                        padding: isMobile ? 0.22 : 0.2,
-                        minZoom: 0.4,
-                        maxZoom: isMobile ? 0.9 : 2.5,
-                      });
-                    });
-                  }}
-                  nodesConnectable={false}
-                  nodesDraggable={!isMobile}
-                  elementsSelectable
-                  onNodeClick={(_, node) => {
-                    // 再点同一节点取消选中，否则选中
-                    setSelectedConcept((prev) => (prev === node.id ? null : node.id));
-                  }}
-                  onNodeMouseEnter={(_, node) => setHoverNode(node.id)}
-                  onNodeMouseLeave={() => setHoverNode(null)}
-                  onPaneClick={() => {
-                    setSelectedConcept(null);
-                    setHoverNode(null);
-                  }}
-                  proOptions={{ hideAttribution: true }}
-                >
-                  <Background color="#dfe3e3" gap={24} size={1} />
-                  <Controls showInteractive={false} position="bottom-right" />
-                </ReactFlow>
-              </div>
+                <div className="kg-canvas-card">
+                  <div className="kg-container">
+                    <ReactFlow
+                      key={`${selectedTopic?.name ?? 'none'}-${isMobile}`}
+                      nodes={graphNodes}
+                      edges={graphEdges}
+                      nodeTypes={conceptNodeTypes}
+                      minZoom={0.4}
+                      maxZoom={2.5}
+                      onInit={(instance: ReactFlowInstance) => {
+                        graphInstanceRef.current = instance;
+                        requestAnimationFrame(() => {
+                          void instance.fitView({
+                            padding: isMobile ? 0.22 : 0.2,
+                            minZoom: 0.4,
+                            maxZoom: isMobile ? 0.9 : 2.5,
+                          });
+                        });
+                      }}
+                      nodesConnectable={false}
+                      nodesDraggable={!isMobile}
+                      elementsSelectable
+                      onNodeClick={(_, node) => {
+                        // 再点同一节点取消选中，否则选中
+                        setSelectedConcept((prev) => (prev === node.id ? null : node.id));
+                      }}
+                      onNodeMouseEnter={(_, node) => setHoverNode(node.id)}
+                      onNodeMouseLeave={() => setHoverNode(null)}
+                      onPaneClick={() => {
+                        setSelectedConcept(null);
+                        setHoverNode(null);
+                      }}
+                      proOptions={{ hideAttribution: true }}
+                    >
+                      <Background color="#dfe3e3" gap={24} size={1} />
+                      <Controls showInteractive={false} position="bottom-right" />
+                    </ReactFlow>
+                  </div>
+                </div>
 
               <aside className="kg-panel">
                 {selectedConceptInfo ? (
@@ -1782,11 +1784,11 @@ function CostPage({ usageTrend, tokenUsage, codexUsage, resourceState, onRetry }
           <div><p className="eyebrow">Token Usage</p><h1>成本中心</h1></div>
         </div>
         <p>Token 消耗与节省统计，数据来自 Hermes state.db 真实记录 · 近 14 天 {totalCalls} 次调用。</p>
-        <div className="growth-summary">
-          <div><strong>{formatTokens(todayTotalTokens)}</strong><span>今日总消耗</span></div>
-          <div><strong>{formatTokens(todayInputTokens)}</strong><span>今日输入</span></div>
-          <div><strong>{formatTokens(todayOutputTokens)}</strong><span>今日输出</span></div>
-          <div><strong>${(tokenUsage.total?.cost_usd ?? 0).toFixed(2)}</strong><span>今日成本</span></div>
+        <div className="growth-summary" aria-label="今日 Hermes 用量指标">
+          <div className="cost-metric"><OfficeIcon name="activity" size={17} /><div><strong>{formatTokens(todayTotalTokens)}</strong><span>今日总消耗</span></div></div>
+          <div className="cost-metric"><OfficeIcon name="database" size={17} /><div><strong>{formatTokens(todayInputTokens)}</strong><span>今日输入</span></div></div>
+          <div className="cost-metric"><OfficeIcon name="send" size={17} /><div><strong>{formatTokens(todayOutputTokens)}</strong><span>今日输出</span></div></div>
+          <div className="cost-metric"><OfficeIcon name="cost" size={17} /><div><strong>${(tokenUsage.total?.cost_usd ?? 0).toFixed(2)}</strong><span>今日成本</span></div></div>
         </div>
         <p className="cost-page-subnote">缓存命中 {formatTokens(todayCacheTokens)}（已计入总消耗）· 价格按 litellm 官方定价估算</p>
       </div>
@@ -1849,11 +1851,11 @@ function CostPage({ usageTrend, tokenUsage, codexUsage, resourceState, onRetry }
           <p className="archive-empty">暂无 Codex 用量数据（token-tracker 未安装或无记录）。</p>
         ) : (
           <>
-            <div className="growth-summary">
-              <div><strong>{formatTokens((codexUsage.total.input_tokens ?? 0) + (codexUsage.total.output_tokens ?? 0) + (codexUsage.total.cache_read_tokens ?? 0))}</strong><span>今日总消耗</span></div>
-              <div><strong>{formatTokens(codexUsage.total.input_tokens ?? 0)}</strong><span>今日输入</span></div>
-              <div><strong>{formatTokens(codexUsage.total.output_tokens ?? 0)}</strong><span>今日输出</span></div>
-              <div><strong>${(codexUsage.total.cost_usd ?? 0).toFixed(2)}</strong><span>今日成本</span></div>
+            <div className="growth-summary" aria-label="今日 Codex 用量指标">
+              <div className="cost-metric"><OfficeIcon name="activity" size={17} /><div><strong>{formatTokens((codexUsage.total.input_tokens ?? 0) + (codexUsage.total.output_tokens ?? 0) + (codexUsage.total.cache_read_tokens ?? 0))}</strong><span>今日总消耗</span></div></div>
+              <div className="cost-metric"><OfficeIcon name="database" size={17} /><div><strong>{formatTokens(codexUsage.total.input_tokens ?? 0)}</strong><span>今日输入</span></div></div>
+              <div className="cost-metric"><OfficeIcon name="send" size={17} /><div><strong>{formatTokens(codexUsage.total.output_tokens ?? 0)}</strong><span>今日输出</span></div></div>
+              <div className="cost-metric"><OfficeIcon name="cost" size={17} /><div><strong>${(codexUsage.total.cost_usd ?? 0).toFixed(2)}</strong><span>今日成本</span></div></div>
             </div>
             <div className="codex-usage-note">数据来自 token-tracker 读取 ~/.codex sessions · 今日 {codexUsage.total.api_calls ?? 0} 次调用 · {codexUsage.total.sessions ?? 0} 个会话 · 与 Hermes 网关用量独立计费</div>
             {(codexUsage.by_model ?? []).length > 0 && (
