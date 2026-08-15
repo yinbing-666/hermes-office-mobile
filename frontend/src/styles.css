@@ -139,7 +139,37 @@ button { border: 0; cursor: pointer; }
 .channel-health-grid em { color: #39765a; font-size: 10px; font-style: normal; }
 .channel-health-grid .offline em { color: #9a5050; }
 .channel-health-grid p { grid-column: 2 / -1; margin: 0; color: #93605a; font-size: 10px; line-height: 1.4; }
-.office-overview { padding: var(--card-padding); }
+.office-overview {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 300px;
+  align-items: center;
+  gap: 28px;
+  padding: var(--card-padding);
+}
+
+.office-overview-content {
+  position: relative;
+  z-index: 1;
+  min-width: 0;
+}
+
+.office-hero {
+  position: relative;
+  z-index: 0;
+  width: 300px;
+  overflow: hidden;
+  border-radius: 12px;
+  line-height: 0;
+}
+
+.office-hero img {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 3 / 2;
+  object-fit: cover;
+}
 .home-focus-card, .quick-dispatch-card { display: grid; gap: 12px; padding: var(--card-padding); }
 .section-action { padding: 6px 8px; color: #477fac; background: var(--surface-blue); border: 1px solid #d6e4ee; border-radius: 6px; font-size: 10px; font-weight: 650; }
 .section-action:focus-visible, .quick-dispatch-button:focus-visible, .home-task-row:focus-visible { outline: 2px solid #8fb8df; outline-offset: 2px; }
@@ -2442,5 +2472,53 @@ input:focus { border-color: #8fb8df; box-shadow: 0 0 0 3px rgba(77, 143, 216, .0
     width: 150px;
     transform: none;
     opacity: 0.2;
+  }
+}
+
+/* Office hero mobile watermark (Luna 方案) */
+@media (max-width: 720px) {
+  .office-overview {
+    display: block;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .office-overview-content {
+    z-index: 1;
+  }
+
+  .office-hero {
+    position: absolute;
+    right: -18px;
+    bottom: -10px;
+    z-index: 0;
+    width: 205px;
+    opacity: 0.2;
+    pointer-events: none;
+    border-radius: 12px;
+  }
+
+  .office-hero img {
+    aspect-ratio: 3 / 2;
+  }
+
+  .status-overview,
+  .today-overview {
+    position: relative;
+    z-index: 2;
+  }
+}
+
+/* Office overview mobile: prevent today-overview label clipping */
+@media (max-width: 720px) {
+  .today-overview small {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-size: 9px;
+  }
+
+  .today-overview > div {
+    padding: 8px 6px;
   }
 }

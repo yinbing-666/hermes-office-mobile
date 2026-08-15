@@ -529,23 +529,28 @@ function OfficePage({ agents, tasks, selectedId, onSelectAgent, onOpenTasks, bac
   return (
     <section className="page-section">
       <div className="office-overview">
-        <div className="overview-heading">
-          <div className="overview-mark"><OfficeIcon name="office" size={24} /></div>
-          <div>
-            <p className="eyebrow">Hermes Workspace</p>
-            <h1>Hermes 办公室</h1>
+        <div className="office-overview-content">
+          <div className="overview-heading">
+            <div className="overview-mark"><OfficeIcon name="office" size={24} /></div>
+            <div>
+              <p className="eyebrow">Hermes Workspace</p>
+              <h1>Hermes 办公室</h1>
+            </div>
+          </div>
+          <p className="overview-copy">集中查看智能员工状态、职责与待处理任务。</p>
+          <div className="status-overview">
+            <div><span className="metric-dot online" /><strong className={`metric-value${loading ? ' metric-value-loading' : online === 0 ? ' metric-value-zero' : ''}`}>{loading ? '—' : online}</strong><small className="metric-label">在线员工</small></div>
+            <div><span className="metric-dot offline" /><strong className={`metric-value${loading ? ' metric-value-loading' : offline === 0 ? ' metric-value-zero' : ''}`}>{loading ? '—' : offline}</strong><small className="metric-label">离线员工</small></div>
+            <div><span className="metric-dot pending" /><strong className={`metric-value${blocked + running === 0 ? ' metric-value-zero' : ''}`}>{blocked + running}</strong><small className="metric-label">待处理任务</small></div>
+          </div>
+          <div className="today-overview">
+            <div><strong className={`metric-value metric-value-compact${todayCallsLoading ? ' metric-value-loading' : todayCalls === 0 ? ' metric-value-zero' : ''}`}>{todayCalls}</strong><small className="metric-label">今日 API 调用</small></div>
+            <div><strong className={`metric-value metric-value-compact${todayIngestLoading ? ' metric-value-loading' : todayIngest === 0 ? ' metric-value-zero' : ''}`}>{todayIngest}</strong><small className="metric-label">今日知识入库</small></div>
+            <div><strong className={`metric-value metric-value-compact${knowledgeTotal === '—' ? ' metric-value-loading' : knowledgeTotal === 0 ? ' metric-value-zero' : ''}`}>{knowledgeTotal}</strong><small className="metric-label">知识库总量</small></div>
           </div>
         </div>
-        <p className="overview-copy">集中查看智能员工状态、职责与待处理任务。</p>
-        <div className="status-overview">
-          <div><span className="metric-dot online" /><strong className={`metric-value${loading ? ' metric-value-loading' : online === 0 ? ' metric-value-zero' : ''}`}>{loading ? '—' : online}</strong><small className="metric-label">在线员工</small></div>
-          <div><span className="metric-dot offline" /><strong className={`metric-value${loading ? ' metric-value-loading' : offline === 0 ? ' metric-value-zero' : ''}`}>{loading ? '—' : offline}</strong><small className="metric-label">离线员工</small></div>
-          <div><span className="metric-dot pending" /><strong className={`metric-value${blocked + running === 0 ? ' metric-value-zero' : ''}`}>{blocked + running}</strong><small className="metric-label">待处理任务</small></div>
-        </div>
-        <div className="today-overview">
-          <div><strong className={`metric-value metric-value-compact${todayCallsLoading ? ' metric-value-loading' : todayCalls === 0 ? ' metric-value-zero' : ''}`}>{todayCalls}</strong><small className="metric-label">今日 API 调用</small></div>
-          <div><strong className={`metric-value metric-value-compact${todayIngestLoading ? ' metric-value-loading' : todayIngest === 0 ? ' metric-value-zero' : ''}`}>{todayIngest}</strong><small className="metric-label">今日知识入库</small></div>
-          <div><strong className={`metric-value metric-value-compact${knowledgeTotal === '—' ? ' metric-value-loading' : knowledgeTotal === 0 ? ' metric-value-zero' : ''}`}>{knowledgeTotal}</strong><small className="metric-label">知识库总量</small></div>
+        <div className="office-hero" aria-hidden="true">
+          <img src="/images/office-hero.webp" alt="" />
         </div>
       </div>
       <VirtualOfficeCard onSelectAgent={onSelectAgent} />
