@@ -1170,8 +1170,8 @@ function KnowledgePage({
     const sortedNodes = [...graph.nodes].sort(
       (a, b) => (nodeDegrees.get(b.id) ?? 0) - (nodeDegrees.get(a.id) ?? 0),
     );
-    // 手机默认 18 节点（更稀疏），桌面 30
-    const defaultCount = isMobile ? 18 : 30;
+    // 手机默认 14 节点（更稀疏），桌面 30
+    const defaultCount = isMobile ? 14 : 30;
     const visibleIds = new Set(
       (showAll ? sortedNodes : sortedNodes.slice(0, defaultCount)).map((n) => n.id),
     );
@@ -1184,16 +1184,46 @@ function KnowledgePage({
         degree: nodeDegrees.get(node.id) ?? 1,
       }));
 
-    // 确定性圆环初始位置（去掉 Math.random，避免每次重算整图乱跳）
-    const ringRadius = isMobile ? 120 : 150;
+    const coreCount = Math.min(isMobile ? 4 : 10, nodes.length);
+    const coreIds = new Set(nodes.slice(0, coreCount).map((node) => node.id));
+    const coreIndexById = new Map(nodes.slice(0, coreCount).map((node, index) => [node.id, index]));
+    const outerGroupSizes = new Map<number, number>();
+
+    // 核心节点放内圈；其余节点优先围绕与其相连的核心节点分布。
     const initialNodes = nodes.map((node, i) => {
-      const angle = (i / Math.max(nodes.length, 1)) * Math.PI * 2;
+      if (i < coreCount) {
+        const angle = (i / Math.max(coreCount, 1)) * Math.PI * 2;
+        return {
+          id: node.id,
+          topic: node.topic,
+          degree: node.degree,
+          x: Math.cos(angle) * (isMobile ? 55 : 80),
+          y: Math.sin(angle) * (isMobile ? 55 : 80),
+        };
+      }
+
+      const relatedCore = graph.edges.find((edge) =>
+        (edge.source === node.id && coreIds.has(edge.target))
+        || (edge.target === node.id && coreIds.has(edge.source)),
+      );
+      const relatedCoreId = relatedCore
+        ? (relatedCore.source === node.id ? relatedCore.target : relatedCore.source)
+        : undefined;
+      const groupIndex = relatedCoreId !== undefined
+        ? (coreIndexById.get(relatedCoreId) ?? (i - coreCount) % Math.max(coreCount, 1))
+        : (i - coreCount) % Math.max(coreCount, 1);
+      const positionInGroup = outerGroupSizes.get(groupIndex) ?? 0;
+      outerGroupSizes.set(groupIndex, positionInGroup + 1);
+      const groupAngle = (groupIndex / Math.max(coreCount, 1)) * Math.PI * 2;
+      const angleOffset = (positionInGroup % 2 === 0 ? 1 : -1) * Math.ceil(positionInGroup / 2) * 0.28;
+      const angle = groupAngle + angleOffset;
+      const radius = isMobile ? 155 + (positionInGroup % 3) * 27.5 : 150;
       return {
         id: node.id,
         topic: node.topic,
         degree: node.degree,
-        x: Math.cos(angle) * ringRadius,
-        y: Math.sin(angle) * ringRadius,
+        x: Math.cos(angle) * radius,
+        y: Math.sin(angle) * radius,
       };
     });
 
@@ -1202,33 +1232,31 @@ function KnowledgePage({
       .map((edge) => ({ source: edge.source, target: edge.target }));
 
     const simulation = forceSimulation(initialNodes as any)
-      .force('link', forceLink(links as any).id((d: any) => d.id).distance(isMobile ? 150 : 120))
-      .force('charge', forceManyBody().strength(isMobile ? -400 : -300))
+      .force('link', forceLink(links as any).id((d: any) => d.id).distance(isMobile ? 180 : 120))
+      .force('charge', forceManyBody().strength(isMobile ? -600 : -300))
       .force('center', forceCenter(0, 0))
       // 碰撞半径按节点类型：核心（带文字）更大，普通圆点小
       .force('collide', (() => {
-        const topN = Math.min(isMobile ? 6 : 10, nodes.length);
-        const coreIds = new Set(initialNodes.slice(0, topN).map((n) => n.id));
-        return forceCollide((d: any) => (coreIds.has(d.id) ? (isMobile ? 90 : 78) : (isMobile ? 32 : 26)));
+        return forceCollide((d: any) => (coreIds.has(d.id) ? (isMobile ? 105 : 78) : (isMobile ? 44 : 26))).iterations(3);
       })())
       .stop();
 
-    for (let i = 0; i < 100; i += 1) simulation.tick();
+    for (let i = 0; i < 180; i += 1) simulation.tick();
 
-    // 归一化坐标到 ±180 范围，避免 fitView 缩得太小（针尖节点）
+    // 手机端使用纵向更充足的矩形范围，减少外圈节点挤在中心区域。
     const xs = initialNodes.map((n) => n.x);
     const ys = initialNodes.map((n) => n.y);
     const maxX = Math.max(...xs.map(Math.abs), 1);
     const maxY = Math.max(...ys.map(Math.abs), 1);
-    const scale = 180 / Math.max(maxX, maxY, 1);
+    const scaleX = (isMobile ? 165 : 180) / maxX;
+    const scaleY = (isMobile ? 235 : 180) / maxY;
     initialNodes.forEach((n) => {
-      n.x *= scale;
-      n.y *= scale;
+      n.x *= scaleX;
+      n.y *= scaleY;
     });
 
     const maxDegree = Math.max(...initialNodes.map((n) => n.degree), 1);
-    // 手机端核心文字更少（6 个），桌面 10 个——窄屏下文字标签太多必然重叠
-    const coreCount = Math.min(isMobile ? 6 : 10, initialNodes.length);
+    // 手机端核心文字更少（4 个），桌面 10 个——窄屏下文字标签太多必然重叠
     const nodeById = new Map<string, { x: number; y: number; degree: number; core: boolean }>();
     initialNodes.forEach((node, i) => {
       nodeById.set(node.id, {
@@ -1291,16 +1319,16 @@ function KnowledgePage({
           id,
           source,
           target,
-          type: 'smoothstep',
+          type: isMobile ? 'bezier' : 'smoothstep',
           style: {
-            stroke: isFocused ? '#6d8fc9' : '#9db4d8',
-            strokeWidth: isFocused ? 1.6 : 1,
-            opacity: focusNode ? (isFocused ? 1 : 0.25) : 0.7,
+            stroke: isFocused ? '#315f9f' : '#6684ad',
+            strokeWidth: isFocused ? 2.2 : 1.4,
+            opacity: focusNode ? (isFocused ? 1 : 0.25) : 0.82,
             transition: 'opacity 160ms ease',
           },
-          markerEnd: {
+          markerEnd: isMobile ? undefined : {
             type: MarkerType.ArrowClosed,
-            color: isFocused ? '#6d8fc9' : '#9db4d8',
+            color: isFocused ? '#315f9f' : '#6684ad',
             width: 12,
             height: 12,
           },
@@ -1309,7 +1337,7 @@ function KnowledgePage({
       .filter((edge): edge is Edge => edge !== null);
 
     return edges;
-  }, [graph, graphNodes, focusNode]);
+  }, [graph, graphNodes, focusNode, isMobile]);
 
   const selectedConceptInfo = useMemo(() => {
     if (!selectedConcept || !graph) return null;

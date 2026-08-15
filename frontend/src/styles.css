@@ -2115,10 +2115,17 @@ input:focus { border-color: #8fb8df; box-shadow: 0 0 0 3px rgba(77, 143, 216, .0
 
 .concept-node-label {
   display: none;
+  max-width: 112px;
+  padding: 3px 6px;
+  overflow: hidden;
   color: #444;
   font-size: 13px;
   font-weight: 500;
-  white-space: nowrap;
+  line-height: 1.25;
+  background: rgba(250, 249, 247, 0.96);
+  border-radius: 6px;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 
 .concept-node.is-core {
@@ -2133,7 +2140,7 @@ input:focus { border-color: #8fb8df; box-shadow: 0 0 0 3px rgba(77, 143, 216, .0
 }
 
 .concept-node.is-core .concept-node-label {
-  display: block;
+  display: -webkit-box;
   font-size: 14px;
   font-weight: 600;
 }
@@ -2153,7 +2160,7 @@ input:focus { border-color: #8fb8df; box-shadow: 0 0 0 3px rgba(77, 143, 216, .0
 }
 
 .concept-node.show-label .concept-node-label {
-  display: block;
+  display: -webkit-box;
 }
 
 /* 桌面 hover 展开（仅支持 hover 的设备生效，手机无 hover 靠点击） */
@@ -2172,7 +2179,7 @@ input:focus { border-color: #8fb8df; box-shadow: 0 0 0 3px rgba(77, 143, 216, .0
   }
 
   .concept-node:hover .concept-node-label {
-    display: block;
+    display: -webkit-box;
   }
 }
 
@@ -2302,6 +2309,14 @@ input:focus { border-color: #8fb8df; box-shadow: 0 0 0 3px rgba(77, 143, 216, .0
     max-height: none;
     border-top: 1px solid #e5e5e5;
     border-radius: 0 0 12px 12px;
+  }
+}
+
+@media (max-width: 720px) {
+  .kg-container {
+    height: 520px;
+    min-height: 520px;
+    max-height: 520px;
   }
 }
 
