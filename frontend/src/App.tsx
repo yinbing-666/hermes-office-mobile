@@ -1,5 +1,15 @@
 import { useEffect, useMemo, useState } from 'react';
-import { fetchAgents, fetchEvolution, fetchTasks, sendMessage, fetchSession, loginWithPassword, logoutSession, fetchTokenUsage, fetchCodexUsage, fetchGrowth, fetchKnowledge, fetchUsageTrend, fetchHealth } from './api';
+import {
+  Background,
+  Controls,
+  MarkerType,
+  ReactFlow,
+  type Edge,
+  type Node,
+} from 'reactflow';
+import { forceCenter, forceCollide, forceLink, forceManyBody, forceSimulation } from 'd3-force';
+import 'reactflow/dist/style.css';
+import { fetchAgents, fetchEvolution, fetchTasks, sendMessage, fetchSession, loginWithPassword, logoutSession, fetchTokenUsage, fetchCodexUsage, fetchGrowth, fetchKnowledge, fetchUsageTrend, fetchHealth, fetchKbTopics, fetchKbGraph, type KnowledgeGraphPayload } from './api';
 import type { CodexUsageData } from './api';
 import { OfficeIcon, type OfficeIconName } from './components/OfficeIcon';
 import { LoginPage } from './LoginPage';
@@ -940,53 +950,570 @@ function EvolutionPage({ evolution, growth, growthState, onRetryGrowth }: { evol
   );
 }
 
-function KnowledgePage({ knowledge, resourceState, onRetry }: { knowledge: KnowledgeData; resourceState: ResourceState; onRetry: () => void }) {
+type KnowledgeMapFile = {
+  name: string;
+  path: string;
+  reason: string;
+};
+
+type KnowledgeTopic = {
+  name: string;
+  fileCount: number;
+  files?: KnowledgeMapFile[];
+};
+
+type TopicApiFile = {
+  name?: string;
+  filename?: string;
+  path?: string;
+  reason?: string;
+};
+
+type TopicApiItem = {
+  name?: string;
+  title?: string;
+  topic?: string;
+  file_count?: number;
+  fileCount?: number;
+  count?: number;
+  files?: TopicApiFile[];
+};
+
+function normalizeTopicFile(file: TopicApiFile): KnowledgeMapFile {
+  const name = file.name ?? file.filename ?? file.path ?? '未命名文件';
+
+  return {
+    name,
+    path: file.path ?? name,
+    reason: file.reason ?? '暂无描述',
+  };
+}
+
+function normalizeTopics(payload: unknown): KnowledgeTopic[] {
+  const rawTopics = Array.isArray(payload)
+    ? payload
+    : ((payload as { topics?: TopicApiItem[] } | null)?.topics ?? []);
+
+  return rawTopics.map((topic) => {
+    const files = (topic.files ?? []).map(normalizeTopicFile);
+
+    return {
+      name: topic.name ?? topic.title ?? topic.topic ?? '未命名主题',
+      fileCount: topic.file_count ?? topic.fileCount ?? topic.count ?? files.length,
+      files,
+    };
+  });
+}
+
+function ConceptNode({ data, selected }: { data: { label: string; core: boolean; showLabel?: boolean }; selected?: boolean }) {
+  return (
+    <div
+      className={`concept-node${data.core ? ' is-core' : ''}${data.showLabel || selected ? ' show-label' : ''}`}
+    >
+      <span className="concept-node-label">{data.label}</span>
+    </div>
+  );
+}
+
+const conceptNodeTypes = { concept: ConceptNode };
+
+function KnowledgePage({
+  knowledge,
+  resourceState,
+  onRetry,
+}: {
+  knowledge: KnowledgeData;
+  resourceState: ResourceState;
+  onRetry: () => void;
+}) {
   const counts = knowledge.counts ?? { 来源: 0, 概念: 0, 对比: 0, 实体: 0, 想法: 0 };
   const total = knowledge.total ?? 0;
   const trend = knowledge.trend ?? [];
   const trendMaximum = Math.max(...trend.map((item) => item.files_added), 1);
   const commits = knowledge.recent_commits ?? [];
-  const countIcons: Record<string, OfficeIconName> = { 来源: 'file', 概念: 'search', 对比: 'activity', 实体: 'user', 想法: 'growth' };
+  const countIcons: Record<string, OfficeIconName> = {
+    来源: 'file',
+    概念: 'search',
+    对比: 'activity',
+    实体: 'user',
+    想法: 'growth',
+  };
+
+  const [view, setView] = useState<'map' | 'detail'>('map');
+  const [selectedTopic, setSelectedTopic] = useState<KnowledgeTopic | null>(null);
+  const [topics, setTopics] = useState<KnowledgeTopic[]>([]);
+  const [topicsLoading, setTopicsLoading] = useState(false);
+  const [topicsError, setTopicsError] = useState('');
+  const [graph, setGraph] = useState<KnowledgeGraphPayload | null>(null);
+  const [graphLoading, setGraphLoading] = useState(false);
+  const [graphError, setGraphError] = useState('');
+  const [selectedConcept, setSelectedConcept] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (resourceState.status !== 'success') return;
+
+    let cancelled = false;
+
+    const loadTopics = async () => {
+      setTopicsLoading(true);
+      setTopicsError('');
+
+      try {
+        const payload = await fetchKbTopics();
+        if (!cancelled) {
+          setTopics(normalizeTopics(payload.data ?? payload));
+        }
+      } catch {
+        if (!cancelled) {
+          setTopicsError('主题地图加载失败，请稍后重试。');
+        }
+      } finally {
+        if (!cancelled) {
+          setTopicsLoading(false);
+        }
+      }
+    };
+
+    loadTopics();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [resourceState.status]);
+
+  const openTopic = async (topic: KnowledgeTopic) => {
+    setSelectedTopic(topic);
+    setSelectedConcept(null);
+    setGraph(null);
+    setGraphError('');
+    setView('detail');
+    setGraphLoading(true);
+
+    try {
+      const payload = await fetchKbGraph(topic.name);
+      setGraph(payload.data ?? payload);
+    } catch {
+      setGraphError('知识图谱加载失败，请返回后重试。');
+    } finally {
+      setGraphLoading(false);
+    }
+  };
+
+  const backToMap = () => {
+    setView('map');
+    setSelectedTopic(null);
+    setSelectedConcept(null);
+    setGraph(null);
+    setGraphError('');
+  };
+
+  // 悬停聚焦：记录 hover 节点的邻居集合
+  const [hoverNode, setHoverNode] = useState<string | null>(null);
+  // 是否显示全部节点（默认只看核心骨架）
+  const [showAll, setShowAll] = useState(false);
+  // 响应式：手机端（触摸）与桌面端（hover）交互模型不同
+  const [isMobile, setIsMobile] = useState(() => window.innerWidth <= 480);
+  useEffect(() => {
+    const onResize = () => setIsMobile(window.innerWidth <= 480);
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
+
+  // 焦点节点：桌面 hover 优先，手机点击（selected）生效
+  const focusNode = hoverNode ?? selectedConcept;
+  const focusNeighbors = useMemo(() => {
+    const neighbors = new Set<string>();
+    if (!focusNode || !graph) return neighbors;
+    graph.edges.forEach((edge) => {
+      if (edge.source === focusNode) neighbors.add(edge.target);
+      if (edge.target === focusNode) neighbors.add(edge.source);
+    });
+    return neighbors;
+  }, [focusNode, graph]);
+
+  // 节点度（连接数）——用于大小映射
+  const nodeDegrees = useMemo(() => {
+    const degrees = new Map<string, number>();
+    graph?.edges.forEach((edge) => {
+      degrees.set(edge.source, (degrees.get(edge.source) ?? 0) + 1);
+      degrees.set(edge.target, (degrees.get(edge.target) ?? 0) + 1);
+    });
+    return degrees;
+  }, [graph]);
+
+  // 布局计算：只依赖 graph/showAll/isMobile，不随 hover/点击重跑 d3
+  // 返回 { nodeById: Map<id, {x,y,degree,core}>, visibleIds: Set<string> }
+  const graphLayout = useMemo(() => {
+    const empty = { nodeById: new Map<string, { x: number; y: number; degree: number; core: boolean }>(), visibleIds: new Set<string>() };
+    if (!graph) return empty;
+
+    const sortedNodes = [...graph.nodes].sort(
+      (a, b) => (nodeDegrees.get(b.id) ?? 0) - (nodeDegrees.get(a.id) ?? 0),
+    );
+    // 手机默认 18 节点（更稀疏），桌面 30
+    const defaultCount = isMobile ? 18 : 30;
+    const visibleIds = new Set(
+      (showAll ? sortedNodes : sortedNodes.slice(0, defaultCount)).map((n) => n.id),
+    );
+
+    const nodes = sortedNodes
+      .filter((n) => visibleIds.has(n.id))
+      .map((node) => ({
+        id: node.id,
+        topic: node.topic,
+        degree: nodeDegrees.get(node.id) ?? 1,
+      }));
+
+    // 确定性圆环初始位置（去掉 Math.random，避免每次重算整图乱跳）
+    const ringRadius = isMobile ? 120 : 150;
+    const initialNodes = nodes.map((node, i) => {
+      const angle = (i / Math.max(nodes.length, 1)) * Math.PI * 2;
+      return {
+        id: node.id,
+        topic: node.topic,
+        degree: node.degree,
+        x: Math.cos(angle) * ringRadius,
+        y: Math.sin(angle) * ringRadius,
+      };
+    });
+
+    const links = graph.edges
+      .filter((edge) => visibleIds.has(edge.source) && visibleIds.has(edge.target))
+      .map((edge) => ({ source: edge.source, target: edge.target }));
+
+    const simulation = forceSimulation(initialNodes as any)
+      .force('link', forceLink(links as any).id((d: any) => d.id).distance(isMobile ? 150 : 120))
+      .force('charge', forceManyBody().strength(isMobile ? -400 : -300))
+      .force('center', forceCenter(0, 0))
+      // 碰撞半径按节点类型：核心（带文字）更大，普通圆点小
+      .force('collide', (() => {
+        const topN = Math.min(isMobile ? 6 : 10, nodes.length);
+        const coreIds = new Set(initialNodes.slice(0, topN).map((n) => n.id));
+        return forceCollide((d: any) => (coreIds.has(d.id) ? (isMobile ? 90 : 78) : (isMobile ? 32 : 26)));
+      })())
+      .stop();
+
+    for (let i = 0; i < 250; i += 1) simulation.tick();
+
+    // 归一化坐标到 ±180 范围，避免 fitView 缩得太小（针尖节点）
+    const xs = initialNodes.map((n) => n.x);
+    const ys = initialNodes.map((n) => n.y);
+    const maxX = Math.max(...xs.map(Math.abs), 1);
+    const maxY = Math.max(...ys.map(Math.abs), 1);
+    const scale = 180 / Math.max(maxX, maxY, 1);
+    initialNodes.forEach((n) => {
+      n.x *= scale;
+      n.y *= scale;
+    });
+
+    const maxDegree = Math.max(...initialNodes.map((n) => n.degree), 1);
+    // 手机端核心文字更少（6 个），桌面 10 个——窄屏下文字标签太多必然重叠
+    const coreCount = Math.min(isMobile ? 6 : 10, initialNodes.length);
+    const nodeById = new Map<string, { x: number; y: number; degree: number; core: boolean }>();
+    initialNodes.forEach((node, i) => {
+      nodeById.set(node.id, {
+        x: node.x,
+        y: node.y,
+        degree: node.degree,
+        core: i < coreCount,
+      });
+    });
+
+    return { nodeById, visibleIds };
+  }, [graph, nodeDegrees, showAll, isMobile]);
+
+  const graphNodes = useMemo<Node[]>(() => {
+    if (!graph) return [];
+    return Array.from(graphLayout.nodeById.entries()).map(([id, pos]) => {
+      const isFocused = focusNode === id || focusNeighbors.has(id);
+      const isDimmed = focusNode !== null && !isFocused;
+      const core = pos.core;
+      return {
+        id,
+        type: 'concept',
+        position: { x: pos.x, y: pos.y },
+        data: { label: id, core, showLabel: isFocused && !core },
+        style: {
+          opacity: isDimmed ? 0.25 : core ? 1 : 0.85,
+          transition: 'opacity 160ms ease',
+        },
+      };
+    });
+  }, [graph, graphLayout, focusNode, focusNeighbors]);
+
+  const graphEdges = useMemo<Edge[]>(() => {
+    if (!graph) return [];
+    return graph.edges
+      .filter((edge) => graphLayout.visibleIds.has(edge.source) && graphLayout.visibleIds.has(edge.target))
+      .map((edge) => {
+        const isFocused = focusNode === edge.source || focusNode === edge.target;
+        return {
+          id: `${edge.source}-${edge.target}`,
+          source: edge.source,
+          target: edge.target,
+          type: 'smoothstep',
+          style: {
+            stroke: '#c9ccd2',
+            strokeWidth: 0.7,
+            opacity: focusNode ? (isFocused ? 0.9 : 0.12) : 0.4,
+            transition: 'opacity 160ms ease',
+          },
+          markerEnd: {
+            type: MarkerType.ArrowClosed,
+            color: '#c9ccd2',
+            width: 10,
+            height: 10,
+          },
+        };
+      });
+  }, [graph, graphLayout, focusNode]);
+
+  const selectedConceptInfo = useMemo(() => {
+    if (!selectedConcept || !graph) return null;
+    const node = graph.nodes.find((item) => item.id === selectedConcept);
+    if (!node) return null;
+    const connectionCount = graph.edges.filter(
+      (edge) => edge.source === selectedConcept || edge.target === selectedConcept,
+    ).length;
+    return { ...node, connectionCount };
+  }, [graph, selectedConcept]);
 
   if (resourceState.status !== 'success') {
-    return <section className="page-section knowledge-page"><ResourceStateCard state={resourceState} onRetry={onRetry} label="知识库统计" /></section>;
+    return (
+      <section className="page-section knowledge-page">
+        <ResourceStateCard state={resourceState} onRetry={onRetry} label="知识库统计" />
+      </section>
+    );
   }
 
   return (
     <section className="page-section knowledge-page">
       <div className="growth-hero">
         <div className="growth-hero-heading">
-          <div className="overview-mark"><OfficeIcon name="search" size={24} /></div>
-          <div><p className="eyebrow">Knowledge Base</p><h1>知识资产库</h1></div>
+          <div className="overview-mark">
+            <OfficeIcon name="search" size={24} />
+          </div>
+          <div>
+            <p className="eyebrow">Knowledge Base</p>
+            <h1>知识资产库</h1>
+          </div>
         </div>
-        <p>wiki 知识库实时统计：来源摘要、概念沉淀、对比分析与灵感想法的规模与最近动态。</p>
+        <p>Wiki 知识库实时统计：来源摘要、概念沉淀、对比分析与灵感想法的规模与最近动态。</p>
         <div className="growth-summary">
-          <div><strong>{knowledge.available ? total : '暂无'}</strong><span>知识总数</span></div>
-          <div><strong>{counts['来源'] ?? 0}</strong><span>来源摘要</span></div>
-          <div><strong>{counts['概念'] ?? 0}</strong><span>概念沉淀</span></div>
+          <div>
+            <strong>{knowledge.available ? total : '暂无'}</strong>
+            <span>知识总数</span>
+          </div>
+          <div>
+            <strong>{counts['来源'] ?? 0}</strong>
+            <span>来源摘要</span>
+          </div>
+          <div>
+            <strong>{counts['概念'] ?? 0}</strong>
+            <span>概念沉淀</span>
+          </div>
         </div>
       </div>
 
-      <div className="section-heading"><div><p className="section-kicker">Library Size</p><h2>知识构成</h2></div><span>按目录归档</span></div>
+      <div className="section-heading">
+        <div>
+          <p className="section-kicker">Knowledge Map</p>
+          <h2>{view === 'map' ? '主题地图' : selectedTopic?.name ?? '主题详情'}</h2>
+        </div>
+        {view === 'map' ? (
+          <span>{topics.length ? `${topics.length} 个主题` : '按主题归档'}</span>
+        ) : (
+          <button type="button" className="km-back-button" onClick={backToMap}>
+            ← 返回主题地图
+          </button>
+        )}
+      </div>
+
+      {view === 'map' ? (
+        <div className="km-map">
+          {topicsLoading ? (
+            <div className="archive-card km-status-card">
+              <p className="archive-empty">正在加载主题地图...</p>
+            </div>
+          ) : topicsError ? (
+            <div className="archive-card km-status-card">
+              <p className="archive-empty">{topicsError}</p>
+              <button
+                type="button"
+                className="km-retry-button"
+                onClick={() => {
+                  setTopicsError('');
+                  setTopicsLoading(true);
+                  fetchKbTopics()
+                    .then((payload) => setTopics(normalizeTopics(payload)))
+                    .catch(() => setTopicsError('主题地图加载失败，请稍后重试。'))
+                    .finally(() => setTopicsLoading(false));
+                }}
+              >
+                重试
+              </button>
+            </div>
+          ) : topics.length === 0 ? (
+            <div className="archive-card km-status-card">
+              <p className="archive-empty">暂无主题地图数据。</p>
+            </div>
+          ) : (
+            <div className="km-topic-grid">
+              {topics.map((topic) => {
+                const firstFile = topic.files?.[0];
+
+                return (
+                  <button
+                    type="button"
+                    className="capability-card km-topic-card"
+                    key={topic.name}
+                    onClick={() => openTopic(topic)}
+                  >
+                    <div className="capability-icon km-topic-icon">
+                      <OfficeIcon name="search" size={18} />
+                    </div>
+                    <div className="km-topic-content">
+                      <strong>{topic.name}</strong>
+                      <small>{topic.fileCount} 个文件</small>
+                      <p>{firstFile?.reason ?? '暂无主题描述'}</p>
+                    </div>
+                    <span className="km-topic-arrow" aria-hidden="true">
+                      →
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className="archive-card kg-detail-card">
+          {graphLoading ? (
+            <div className="kg-status">正在加载知识图谱...</div>
+          ) : graphError ? (
+            <div className="kg-status">
+              <p>{graphError}</p>
+              <button type="button" className="km-retry-button" onClick={() => selectedTopic && openTopic(selectedTopic)}>
+                重试
+              </button>
+            </div>
+          ) : !graph?.available || graph.nodes.length === 0 ? (
+            <div className="kg-status">当前主题暂无可展示的概念图谱。</div>
+          ) : (
+            <>
+              <div className="kg-toolbar">
+                <span className="kg-toolbar-meta">
+                  {showAll ? graph.nodes.length : Math.min(isMobile ? 18 : 30, graph.nodes.length)} / {graph.nodes.length} 个概念
+                </span>
+                <button
+                  type="button"
+                  className="km-retry-button"
+                  onClick={() => setShowAll((v) => !v)}
+                >
+                  {showAll ? '只看核心' : '显示全部'}
+                </button>
+              </div>
+              <div className="kg-layout">
+              <div className="kg-container">
+                <ReactFlow
+                  key={`${selectedTopic}-${showAll}-${isMobile}`}
+                  nodes={graphNodes}
+                  edges={graphEdges}
+                  nodeTypes={conceptNodeTypes}
+                  fitView
+                  fitViewOptions={{ padding: 0.2, minZoom: 0.4, maxZoom: 2.5 }}
+                  nodesConnectable={false}
+                  nodesDraggable={!isMobile}
+                  elementsSelectable
+                  onNodeClick={(_, node) => {
+                    // 再点同一节点取消选中，否则选中
+                    setSelectedConcept((prev) => (prev === node.id ? null : node.id));
+                  }}
+                  onNodeMouseEnter={(_, node) => setHoverNode(node.id)}
+                  onNodeMouseLeave={() => setHoverNode(null)}
+                  onPaneClick={() => {
+                    setSelectedConcept(null);
+                    setHoverNode(null);
+                  }}
+                  proOptions={{ hideAttribution: true }}
+                >
+                  <Background color="#e6e8ec" gap={24} size={1} />
+                  <Controls showInteractive={false} position="bottom-right" />
+                </ReactFlow>
+              </div>
+
+              <aside className="kg-panel">
+                {selectedConceptInfo ? (
+                  <>
+                    <p className="section-kicker">Selected Concept</p>
+                    <h4>{selectedConceptInfo.id}</h4>
+                    <div className="kg-panel-meta">
+                      <span>所属主题</span>
+                      <strong>{selectedConceptInfo.topic}</strong>
+                    </div>
+                    <div className="kg-panel-meta">
+                      <span>关联概念</span>
+                      <strong>{selectedConceptInfo.connectionCount} 个</strong>
+                    </div>
+                  </>
+                ) : (
+                  <div className="kg-panel-placeholder">
+                    <OfficeIcon name="search" size={22} />
+                    <p>点击图谱中的概念节点</p>
+                    <span>查看概念所属主题及其关联数量</span>
+                  </div>
+                )}
+              </aside>
+            </div>
+            </>
+          )}
+        </div>
+      )}
+
+      <div className="section-heading">
+        <div>
+          <p className="section-kicker">Library Size</p>
+          <h2>知识构成</h2>
+        </div>
+        <span>按目录归档</span>
+      </div>
+
       <div className="capability-grid">
         {Object.entries(counts).map(([key, value]) => (
           <div className="capability-card" key={key}>
-            <div className="capability-icon"><OfficeIcon name={countIcons[key] ?? 'file'} size={18} /></div>
-            <div><strong>{key}</strong><small>{value} 条</small></div>
+            <div className="capability-icon">
+              <OfficeIcon name={countIcons[key] ?? 'file'} size={18} />
+            </div>
+            <div>
+              <strong>{key}</strong>
+              <small>{value} 条</small>
+            </div>
             <span className="capability-state recorded">已有沉淀</span>
           </div>
         ))}
       </div>
 
-      <div className="section-heading"><div><p className="section-kicker">Ingest Trend</p><h2>近 7 天入库</h2></div><span>按文件修改时间统计</span></div>
+      <div className="section-heading">
+        <div>
+          <p className="section-kicker">Ingest Trend</p>
+          <h2>近 7 天入库</h2>
+        </div>
+        <span>按文件修改时间统计</span>
+      </div>
+
       <div className="archive-card trend-card">
-        {trend.length === 0 ? <p className="archive-empty">暂无入库记录。</p> : (
+        {trend.length === 0 ? (
+          <p className="archive-empty">暂无入库记录。</p>
+        ) : (
           <div className="trend-chart" aria-label="近七天知识入库趋势">
             {trend.map((item) => (
               <div className="trend-column" key={item.date}>
                 <span>{item.files_added}</span>
                 <div className="trend-bar">
-                  <i className="trend-skill" style={{ height: `${(item.files_added / trendMaximum) * 100}%` }} />
+                  <i
+                    className="trend-skill"
+                    style={{ height: `${(item.files_added / trendMaximum) * 100}%` }}
+                  />
                 </div>
                 <small>{item.date.slice(5)}</small>
               </div>
@@ -995,14 +1522,33 @@ function KnowledgePage({ knowledge, resourceState, onRetry }: { knowledge: Knowl
         )}
       </div>
 
-      <div className="section-heading"><div><p className="section-kicker">Recent Commits</p><h2>最近提交</h2></div><span>{commits.length ? `${commits.length} 条真实记录` : '待记录'}</span></div>
+      <div className="section-heading">
+        <div>
+          <p className="section-kicker">Recent Commits</p>
+          <h2>最近提交</h2>
+        </div>
+        <span>{commits.length ? `${commits.length} 条真实记录` : '待记录'}</span>
+      </div>
+
       <div className="archive-card milestone-card">
-        {commits.length === 0 ? <p className="archive-empty">暂无提交记录。</p> : commits.map((commit) => (
-          <div className="milestone-event" key={commit.id}>
-            <div className="milestone-rail"><span><OfficeIcon name="terminal" size={15} /></span><i /></div>
-            <div><strong>{commit.title}</strong><time>{formatTime(commit.date)}</time></div>
-          </div>
-        ))}
+        {commits.length === 0 ? (
+          <p className="archive-empty">暂无提交记录。</p>
+        ) : (
+          commits.map((commit) => (
+            <div className="milestone-event" key={commit.id}>
+              <div className="milestone-rail">
+                <span>
+                  <OfficeIcon name="terminal" size={15} />
+                </span>
+                <i />
+              </div>
+              <div>
+                <strong>{commit.title}</strong>
+                <time>{formatTime(commit.date)}</time>
+              </div>
+            </div>
+          ))
+        )}
       </div>
     </section>
   );
