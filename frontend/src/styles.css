@@ -596,10 +596,14 @@ input:focus { border-color: #8fb8df; box-shadow: 0 0 0 3px rgba(77, 143, 216, .0
 .trend-skill { background: #4a7fad; }
 .trend-profile { background: #a07c3a; }
 
+.cost-metrics-grid { display: grid; grid-template-columns: repeat(4, 1fr); border: 1px solid var(--line); border-radius: 9px; overflow: hidden; background: var(--surface-soft); }
+.cost-metrics-grid > .cost-metric { min-width: 0; display: grid; grid-template-columns: 16px minmax(0, 1fr); gap: 4px; padding: 8px 6px; border-right: 1px solid var(--line); align-items: center; }
+.cost-metrics-grid > .cost-metric:last-child { border-right: 0; }
+.cost-metrics-grid .office-icon { color: var(--brand); }
+.cost-metrics-grid > .cost-metric > div { min-width: 0; display: grid; gap: 2px; }
+.cost-metrics-grid strong { overflow: hidden; color: #2d353b; font-size: 12px; font-weight: 650; line-height: 1.2; text-overflow: ellipsis; white-space: nowrap; }
+.cost-metrics-grid span { color: var(--subtle); font-size: var(--font-assist); }
 .cost-page .growth-summary { grid-template-columns: repeat(4, minmax(0, 1fr)); border-radius: var(--radius-card); }
-.cost-page .cost-metric { grid-template-columns: 24px minmax(0, 1fr); gap: 8px; align-items: center; }
-.cost-page .cost-metric > .office-icon { color: var(--brand); }
-.cost-page .cost-metric > div { min-width: 0; display: grid; gap: 5px; }
 .cost-page .trend-chart { grid-template-columns: repeat(14, minmax(24px, 1fr)); overflow-x: auto; scrollbar-width: thin; scrollbar-color: var(--line-strong) transparent; min-width: 0; }
 .trend-card { overflow: hidden; }
 .model-usage-card { padding-top: 7px; padding-bottom: 7px; }

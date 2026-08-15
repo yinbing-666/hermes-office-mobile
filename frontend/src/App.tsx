@@ -1851,7 +1851,7 @@ function CostPage({ usageTrend, tokenUsage, codexUsage, resourceState, onRetry }
           <p className="archive-empty">暂无 Codex 用量数据（token-tracker 未安装或无记录）。</p>
         ) : (
           <>
-            <div className="growth-summary" aria-label="今日 Codex 用量指标">
+            <div className="cost-metrics-grid" aria-label="今日 Codex 用量指标">
               <div className="cost-metric"><OfficeIcon name="activity" size={17} /><div><strong>{formatTokens((codexUsage.total.input_tokens ?? 0) + (codexUsage.total.output_tokens ?? 0) + (codexUsage.total.cache_read_tokens ?? 0))}</strong><span>今日总消耗</span></div></div>
               <div className="cost-metric"><OfficeIcon name="database" size={17} /><div><strong>{formatTokens(codexUsage.total.input_tokens ?? 0)}</strong><span>今日输入</span></div></div>
               <div className="cost-metric"><OfficeIcon name="send" size={17} /><div><strong>{formatTokens(codexUsage.total.output_tokens ?? 0)}</strong><span>今日输出</span></div></div>
