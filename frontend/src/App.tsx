@@ -8,8 +8,9 @@ import {
   ReactFlow,
   type Edge,
   type Node,
+  type ReactFlowInstance,
 } from 'reactflow';
-import { forceCenter, forceCollide, forceLink, forceManyBody, forceSimulation } from 'd3-force';
+import dagre from 'dagrejs';
 import 'reactflow/dist/style.css';
 import { fetchAgents, fetchEvolution, fetchTasks, sendMessage, fetchSession, loginWithPassword, logoutSession, fetchTokenUsage, fetchCodexUsage, fetchGrowth, fetchKnowledge, fetchUsageTrend, fetchHealth, fetchKbTopics, fetchKbGraph, type KnowledgeGraphPayload } from './api';
 import type { CodexUsageData } from './api';
@@ -1012,15 +1013,24 @@ function normalizeTopics(payload: unknown): KnowledgeTopic[] {
   });
 }
 
-function ConceptNode({ data, selected }: { data: { label: string; core: boolean; showLabel?: boolean }; selected?: boolean }) {
+function ConceptNode({
+  data,
+  selected,
+}: {
+  data: { label: string; core: boolean; rankdir: 'TB' | 'LR' };
+  selected?: boolean;
+}) {
+  const targetPosition = data.rankdir === 'LR' ? Position.Left : Position.Top;
+  const sourcePosition = data.rankdir === 'LR' ? Position.Right : Position.Bottom;
   return (
     <div
-      className={`concept-node${data.core ? ' is-core' : ''}${data.showLabel || selected ? ' show-label' : ''}`}
+      className={`concept-node${data.core ? ' is-core' : ' is-peripheral'}${selected ? ' is-selected' : ''}`}
     >
       {/* React Flow 11 自定义节点必须有 Handle 才能渲染边 */}
-      <Handle type="target" position={Position.Left} style={{ opacity: 0, pointerEvents: 'none', border: 'none', background: 'transparent' }} />
+      <Handle type="target" position={targetPosition} style={{ opacity: 0, pointerEvents: 'none', border: 'none', background: 'transparent' }} />
+      {!data.core && <span className="concept-node-dot" aria-hidden="true" />}
       <span className="concept-node-label">{data.label}</span>
-      <Handle type="source" position={Position.Right} style={{ opacity: 0, pointerEvents: 'none', border: 'none', background: 'transparent' }} />
+      <Handle type="source" position={sourcePosition} style={{ opacity: 0, pointerEvents: 'none', border: 'none', background: 'transparent' }} />
     </div>
   );
 }
@@ -1058,6 +1068,7 @@ function KnowledgePage({
   const [graphLoading, setGraphLoading] = useState(false);
   const [graphError, setGraphError] = useState('');
   const [selectedConcept, setSelectedConcept] = useState<string | null>(null);
+  const graphInstanceRef = useRef<ReactFlowInstance | null>(null);
 
   useEffect(() => {
     if (resourceState.status !== 'success') return;
@@ -1139,17 +1150,23 @@ function KnowledgePage({
     return () => window.removeEventListener('resize', onResize);
   }, []);
 
+  useEffect(() => {
+    const instance = graphInstanceRef.current;
+    if (!instance || !graph) return;
+
+    const frame = requestAnimationFrame(() => {
+      void instance.fitView({
+        padding: isMobile ? 0.22 : 0.2,
+        minZoom: 0.4,
+        maxZoom: isMobile ? 0.9 : 2.5,
+      });
+    });
+
+    return () => cancelAnimationFrame(frame);
+  }, [graph, showAll, isMobile]);
+
   // 焦点节点：桌面 hover 优先，手机点击（selected）生效
   const focusNode = hoverNode ?? selectedConcept;
-  const focusNeighbors = useMemo(() => {
-    const neighbors = new Set<string>();
-    if (!focusNode || !graph) return neighbors;
-    graph.edges.forEach((edge) => {
-      if (edge.source === focusNode) neighbors.add(edge.target);
-      if (edge.target === focusNode) neighbors.add(edge.source);
-    });
-    return neighbors;
-  }, [focusNode, graph]);
 
   // 节点度（连接数）——用于大小映射
   const nodeDegrees = useMemo(() => {
@@ -1161,20 +1178,41 @@ function KnowledgePage({
     return degrees;
   }, [graph]);
 
-  // 布局计算：只依赖 graph/showAll/isMobile，不随 hover/点击重跑 d3
-  // 返回 { nodeById: Map<id, {x,y,degree,core}>, visibleIds: Set<string> }
+  // 布局计算：只依赖 graph/showAll/isMobile，不随 hover/点击重跑 Dagre。
+  // 手机使用 LR 以利用横向分层，桌面使用 TB；Dagre 的 layer 是屏幕方向上的实际层号。
   const graphLayout = useMemo(() => {
-    const empty = { nodeById: new Map<string, { x: number; y: number; degree: number; core: boolean }>(), visibleIds: new Set<string>() };
+    const empty = {
+      nodeById: new Map<string, { x: number; y: number; degree: number; core: boolean; layer: number }>(),
+      visibleIds: new Set<string>(),
+      rankdir: (isMobile ? 'LR' : 'TB') as 'TB' | 'LR',
+    };
     if (!graph) return empty;
 
     const sortedNodes = [...graph.nodes].sort(
       (a, b) => (nodeDegrees.get(b.id) ?? 0) - (nodeDegrees.get(a.id) ?? 0),
     );
-    // 手机默认 14 节点（更稀疏），桌面 30
-    const defaultCount = isMobile ? 14 : 30;
-    const visibleIds = new Set(
-      (showAll ? sortedNodes : sortedNodes.slice(0, defaultCount)).map((n) => n.id),
-    );
+    const defaultCount = isMobile ? 10 : 30;
+    const mobileCoreCount = 4;
+    let visibleNodes = showAll ? sortedNodes : sortedNodes.slice(0, defaultCount);
+
+    if (isMobile && !showAll) {
+      const coreNodes = sortedNodes.slice(0, mobileCoreCount);
+      const coreIds = new Set(coreNodes.map((node) => node.id));
+      const directlyConnectedIds = new Set<string>();
+      graph.edges.forEach((edge) => {
+        if (coreIds.has(edge.source) && !coreIds.has(edge.target)) directlyConnectedIds.add(edge.target);
+        if (coreIds.has(edge.target) && !coreIds.has(edge.source)) directlyConnectedIds.add(edge.source);
+      });
+
+      // 窄屏默认只保留四个核心，以及与核心直接相连且度数最高的六个外围节点。
+      // 不用间接节点补位：宁可少于十个，也不重新引入跨层长边。
+      const peripheralNodes = sortedNodes
+        .filter((node) => !coreIds.has(node.id) && directlyConnectedIds.has(node.id))
+        .slice(0, defaultCount - mobileCoreCount);
+      visibleNodes = [...coreNodes, ...peripheralNodes];
+    }
+
+    const visibleIds = new Set(visibleNodes.map((node) => node.id));
 
     const nodes = sortedNodes
       .filter((n) => visibleIds.has(n.id))
@@ -1186,108 +1224,116 @@ function KnowledgePage({
 
     const coreCount = Math.min(isMobile ? 4 : 10, nodes.length);
     const coreIds = new Set(nodes.slice(0, coreCount).map((node) => node.id));
-    const coreIndexById = new Map(nodes.slice(0, coreCount).map((node, index) => [node.id, index]));
-    const outerGroupSizes = new Map<number, number>();
-
-    // 核心节点放内圈；其余节点优先围绕与其相连的核心节点分布。
-    const initialNodes = nodes.map((node, i) => {
-      if (i < coreCount) {
-        const angle = (i / Math.max(coreCount, 1)) * Math.PI * 2;
-        return {
-          id: node.id,
-          topic: node.topic,
-          degree: node.degree,
-          x: Math.cos(angle) * (isMobile ? 55 : 80),
-          y: Math.sin(angle) * (isMobile ? 55 : 80),
-        };
-      }
-
-      const relatedCore = graph.edges.find((edge) =>
-        (edge.source === node.id && coreIds.has(edge.target))
-        || (edge.target === node.id && coreIds.has(edge.source)),
-      );
-      const relatedCoreId = relatedCore
-        ? (relatedCore.source === node.id ? relatedCore.target : relatedCore.source)
-        : undefined;
-      const groupIndex = relatedCoreId !== undefined
-        ? (coreIndexById.get(relatedCoreId) ?? (i - coreCount) % Math.max(coreCount, 1))
-        : (i - coreCount) % Math.max(coreCount, 1);
-      const positionInGroup = outerGroupSizes.get(groupIndex) ?? 0;
-      outerGroupSizes.set(groupIndex, positionInGroup + 1);
-      const groupAngle = (groupIndex / Math.max(coreCount, 1)) * Math.PI * 2;
-      const angleOffset = (positionInGroup % 2 === 0 ? 1 : -1) * Math.ceil(positionInGroup / 2) * 0.28;
-      const angle = groupAngle + angleOffset;
-      const radius = isMobile ? 155 + (positionInGroup % 3) * 27.5 : 150;
-      return {
-        id: node.id,
-        topic: node.topic,
-        degree: node.degree,
-        x: Math.cos(angle) * radius,
-        y: Math.sin(angle) * radius,
-      };
-    });
 
     const links = graph.edges
       .filter((edge) => visibleIds.has(edge.source) && visibleIds.has(edge.target))
       .map((edge) => ({ source: edge.source, target: edge.target }));
 
-    const simulation = forceSimulation(initialNodes as any)
-      .force('link', forceLink(links as any).id((d: any) => d.id).distance(isMobile ? 180 : 120))
-      .force('charge', forceManyBody().strength(isMobile ? -600 : -300))
-      .force('center', forceCenter(0, 0))
-      // 碰撞半径按节点类型：核心（带文字）更大，普通圆点小
-      .force('collide', (() => {
-        return forceCollide((d: any) => (coreIds.has(d.id) ? (isMobile ? 105 : 78) : (isMobile ? 44 : 26))).iterations(3);
-      })())
-      .stop();
-
-    for (let i = 0; i < 180; i += 1) simulation.tick();
-
-    // 手机端使用纵向更充足的矩形范围，减少外圈节点挤在中心区域。
-    const xs = initialNodes.map((n) => n.x);
-    const ys = initialNodes.map((n) => n.y);
-    const maxX = Math.max(...xs.map(Math.abs), 1);
-    const maxY = Math.max(...ys.map(Math.abs), 1);
-    const scaleX = (isMobile ? 165 : 180) / maxX;
-    const scaleY = (isMobile ? 235 : 180) / maxY;
-    initialNodes.forEach((n) => {
-      n.x *= scaleX;
-      n.y *= scaleY;
+    const rankdir = (isMobile ? 'LR' : 'TB') as 'TB' | 'LR';
+    const coreNodeWidth = isMobile ? 96 : 150;
+    const peripheralNodeWidth = isMobile ? 106 : 150;
+    const nodeHeight = isMobile ? 36 : 44;
+    const peripheralNodes = nodes.slice(coreCount);
+    // 度数最高的一半外围节点放在核心之前的一层；手机默认恰好是最多 6 个。
+    // 其余外围节点放在核心之后的一层，形成“外围—核心—外围”的三段式骨架。
+    const leadingCount = isMobile
+      ? Math.min(6, peripheralNodes.length)
+      : Math.ceil(peripheralNodes.length / 2);
+    const leadingIds = new Set(peripheralNodes.slice(0, leadingCount).map((node) => node.id));
+    const layerById = new Map<string, number>();
+    nodes.forEach((node) => {
+      layerById.set(node.id, coreIds.has(node.id) ? 1 : leadingIds.has(node.id) ? 0 : 2);
     });
 
-    const maxDegree = Math.max(...initialNodes.map((n) => n.degree), 1);
-    // 手机端核心文字更少（4 个），桌面 10 个——窄屏下文字标签太多必然重叠
-    const nodeById = new Map<string, { x: number; y: number; degree: number; core: boolean }>();
-    initialNodes.forEach((node, i) => {
-      nodeById.set(node.id, {
-        x: node.x,
-        y: node.y,
-        degree: node.degree,
-        core: i < coreCount,
+    const dagreGraph = new dagre.graphlib.Graph();
+    dagreGraph.setDefaultEdgeLabel(() => ({}));
+    dagreGraph.setGraph({
+      rankdir,
+      nodesep: isMobile ? 20 : 60,
+      ranksep: isMobile ? 72 : 100,
+      marginx: 20,
+      marginy: 20,
+      ranker: 'tight-tree',
+    });
+
+    nodes.forEach((node) => {
+      const width = coreIds.has(node.id) ? coreNodeWidth : peripheralNodeWidth;
+      dagreGraph.setNode(node.id, {
+        width,
+        height: nodeHeight,
+        layer: layerById.get(node.id) ?? 1,
       });
     });
 
-    return { nodeById, visibleIds };
+    // dagrejs 的手动 layer 要求边方向与 rank 单调一致。知识关系本身不带布局方向，
+    // 因此只为布局将边按 layer 从前向后定向；同层关系仍由 React Flow 正常展示，
+    // 但不参与 rank 约束，避免把四个核心拆散到不同层。
+    links.forEach((edge) => {
+      const sourceLayer = layerById.get(edge.source) ?? 1;
+      const targetLayer = layerById.get(edge.target) ?? 1;
+      if (sourceLayer === targetLayer) return;
+      const [source, target] = sourceLayer < targetLayer
+        ? [edge.source, edge.target]
+        : [edge.target, edge.source];
+      dagreGraph.setEdge(source, target, {
+        minlen: Math.abs(sourceLayer - targetLayer),
+        weight: coreIds.has(source) || coreIds.has(target) ? 4 : 1,
+      });
+    });
+
+    dagre.layout(dagreGraph, {
+      edgeLabelSpace: false,
+      keepNodeOrder: true,
+      nodeOrder: nodes.map((node) => node.id),
+    });
+
+    const nodeById = new Map<string, { x: number; y: number; degree: number; core: boolean; layer: number }>();
+    const layerIndexes = new Map<number, number>();
+    nodes.forEach((node) => {
+      const position = dagreGraph.node(node.id);
+      const layer = layerById.get(node.id) ?? 1;
+      const layerIndex = layerIndexes.get(layer) ?? 0;
+      const verticalOffset = isMobile
+        ? 0
+        : (layerIndex % 2 === 0 ? -1 : 1) * (coreIds.has(node.id) ? 8 : 12);
+      const width = coreIds.has(node.id) ? coreNodeWidth : peripheralNodeWidth;
+      layerIndexes.set(layer, layerIndex + 1);
+      nodeById.set(node.id, {
+        x: position.x - width / 2,
+        // Dagre 已完成分层与交叉控制后，仅做轻微纵向错位以弱化表格感。
+        y: position.y - nodeHeight / 2 + verticalOffset,
+        degree: node.degree,
+        core: coreIds.has(node.id),
+        layer,
+      });
+    });
+
+    return { nodeById, visibleIds, rankdir };
   }, [graph, nodeDegrees, showAll, isMobile]);
 
   const graphNodes = useMemo<Node[]>(() => {
     if (!graph) return [];
     return Array.from(graphLayout.nodeById.entries()).map(([id, pos]) => {
-      const isFocused = focusNode === id || focusNeighbors.has(id);
+      const isFocused = focusNode === id;
       const isDimmed = focusNode !== null && !isFocused;
       const core = pos.core;
       return {
         id,
         type: 'concept',
         position: { x: pos.x, y: pos.y },
-        data: { label: id, core, showLabel: isFocused && !core },
+        data: {
+          label: id,
+          core,
+          rankdir: graphLayout.rankdir,
+        },
         style: {
-          opacity: isDimmed ? 0.25 : core ? 1 : 0.85,
-          transition: 'opacity 160ms ease',
+          width: isMobile ? (core ? 96 : 106) : 150,
+          height: isMobile ? 36 : 44,
+          opacity: isDimmed ? 0.56 : core ? 1 : 0.92,
         },
       };
     });
-  }, [graph, graphLayout, focusNode, focusNeighbors]);
+  }, [graph, graphLayout, focusNode, isMobile]);
 
   const graphEdges = useMemo<Edge[]>(() => {
     if (!graph) return [];
@@ -1295,16 +1341,49 @@ function KnowledgePage({
     // 以最终传给 React Flow 的 graphNodes 为准（Luna 诊断：过滤基准必须一致）
     const nodeIds = new Set(graphNodes.map((node) => String(node.id)));
 
+    let edgeCandidates = graph.edges
+      .map((edge, index) => ({ edge, index }))
+      .filter(({ edge }) => {
+        if (!nodeIds.has(String(edge.source)) || !nodeIds.has(String(edge.target))) return false;
+        const sourceLayer = graphLayout.nodeById.get(String(edge.source))?.layer ?? 1;
+        const targetLayer = graphLayout.nodeById.get(String(edge.target))?.layer ?? 1;
+        // 两侧外围之间的跨两层长边会重新穿过核心层。图中只画同层局部关系和
+        // 相邻层关系；完整关联数仍保留在右侧详情中，不丢失知识数据。
+        return Math.abs(sourceLayer - targetLayer) <= 1;
+      });
+
+    if (isMobile && !showAll) {
+      const edgePriority = ({ edge }: (typeof edgeCandidates)[number]) => {
+        const sourcePosition = graphLayout.nodeById.get(String(edge.source));
+        const targetPosition = graphLayout.nodeById.get(String(edge.target));
+        if (sourcePosition?.core && targetPosition?.core) return 0;
+        if (sourcePosition?.core !== targetPosition?.core) {
+          const corePosition = sourcePosition?.core ? sourcePosition : targetPosition;
+          const peripheralPosition = sourcePosition?.core ? targetPosition : sourcePosition;
+          return Math.abs((corePosition?.layer ?? 1) - (peripheralPosition?.layer ?? 1)) === 1 ? 1 : 2;
+        }
+        return 3;
+      };
+
+      // 十个节点仍可能形成二十多条诱导边。默认态只显示关系骨架：核心边优先，
+      // 再保留外围到所属核心的主连接，最后按两端度数补充到最多十五条。
+      edgeCandidates = edgeCandidates
+        .sort((left, right) => {
+          const priorityDifference = edgePriority(left) - edgePriority(right);
+          if (priorityDifference) return priorityDifference;
+          const leftDegree = (nodeDegrees.get(left.edge.source) ?? 0) + (nodeDegrees.get(left.edge.target) ?? 0);
+          const rightDegree = (nodeDegrees.get(right.edge.source) ?? 0) + (nodeDegrees.get(right.edge.target) ?? 0);
+          return rightDegree - leftDegree || left.index - right.index;
+        })
+        .slice(0, 15);
+    }
+
     const seenEdgeIds = new Set<string>();
 
-    const edges = graph.edges
-      .map((edge, index) => {
+    const edges = edgeCandidates
+      .map(({ edge, index }) => {
         const source = String(edge.source);
         const target = String(edge.target);
-
-        if (!nodeIds.has(source) || !nodeIds.has(target)) {
-          return null;
-        }
 
         // 唯一 edge id（Luna 诊断：概念名含 - 或双向边会导致 id 冲突）
         const baseId = `kg-edge-${index}`;
@@ -1319,25 +1398,25 @@ function KnowledgePage({
           id,
           source,
           target,
-          type: isMobile ? 'bezier' : 'smoothstep',
+          type: 'smoothstep',
           style: {
-            stroke: isFocused ? '#315f9f' : '#6684ad',
-            strokeWidth: isFocused ? 2.2 : 1.4,
-            opacity: focusNode ? (isFocused ? 1 : 0.25) : 0.82,
-            transition: 'opacity 160ms ease',
+            stroke: isFocused ? '#315f9f' : '#91a5bd',
+            strokeWidth: isFocused ? 1.7 : isMobile ? 1 : 1.2,
+            opacity: focusNode
+              ? (isFocused ? 0.92 : 0.2)
+              : (isMobile ? 0.52 : 0.7),
           },
           markerEnd: isMobile ? undefined : {
             type: MarkerType.ArrowClosed,
-            color: isFocused ? '#315f9f' : '#6684ad',
+            color: isFocused ? '#315f9f' : '#91a5bd',
             width: 12,
             height: 12,
           },
         } as Edge;
       })
-      .filter((edge): edge is Edge => edge !== null);
 
     return edges;
-  }, [graph, graphNodes, focusNode, isMobile]);
+  }, [graph, graphLayout, graphNodes, focusNode, isMobile, nodeDegrees, showAll]);
 
   const selectedConceptInfo = useMemo(() => {
     if (!selectedConcept || !graph) return null;
@@ -1493,7 +1572,7 @@ function KnowledgePage({
             <>
               <div className="kg-toolbar">
                 <span className="kg-toolbar-meta">
-                  {showAll ? graph.nodes.length : Math.min(isMobile ? 18 : 30, graph.nodes.length)} / {graph.nodes.length} 个概念
+                  {graphNodes.length} / {graph.nodes.length} 个概念
                 </span>
                 <button
                   type="button"
@@ -1506,12 +1585,22 @@ function KnowledgePage({
               <div className="kg-layout">
               <div className="kg-container">
                 <ReactFlow
-                  key={`${selectedTopic?.name ?? 'none'}-${showAll}-${isMobile}`}
+                  key={`${selectedTopic?.name ?? 'none'}-${isMobile}`}
                   nodes={graphNodes}
                   edges={graphEdges}
                   nodeTypes={conceptNodeTypes}
-                  fitView
-                  fitViewOptions={{ padding: 0.2, minZoom: 0.4, maxZoom: 2.5 }}
+                  minZoom={0.4}
+                  maxZoom={2.5}
+                  onInit={(instance: ReactFlowInstance) => {
+                    graphInstanceRef.current = instance;
+                    requestAnimationFrame(() => {
+                      void instance.fitView({
+                        padding: isMobile ? 0.22 : 0.2,
+                        minZoom: 0.4,
+                        maxZoom: isMobile ? 0.9 : 2.5,
+                      });
+                    });
+                  }}
                   nodesConnectable={false}
                   nodesDraggable={!isMobile}
                   elementsSelectable
@@ -1527,7 +1616,7 @@ function KnowledgePage({
                   }}
                   proOptions={{ hideAttribution: true }}
                 >
-                  <Background color="#e6e8ec" gap={24} size={1} />
+                  <Background color="#dfe3e3" gap={24} size={1} />
                   <Controls showInteractive={false} position="bottom-right" />
                 </ReactFlow>
               </div>

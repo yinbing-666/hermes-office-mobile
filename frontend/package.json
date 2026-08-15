@@ -10,7 +10,7 @@
   },
   "dependencies": {
     "@vitejs/plugin-react": "latest",
-    "d3-force": "^3.0.0",
+    "dagrejs": "^0.2.1",
     "react": "latest",
     "react-dom": "latest",
     "reactflow": "^11.11.4",
@@ -18,7 +18,6 @@
     "vite": "latest"
   },
   "devDependencies": {
-    "@types/d3-force": "^3.0.10",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3"
   }

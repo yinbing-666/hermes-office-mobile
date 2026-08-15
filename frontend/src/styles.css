@@ -1979,9 +1979,10 @@ input:focus { border-color: #8fb8df; box-shadow: 0 0 0 3px rgba(77, 143, 216, .0
   width: 100%;
   height: 520px;
   overflow: hidden;
-  background: #fff;
-  border: 1px solid #e5e5e5;
-  border-radius: 12px;
+  background: #faf9f6;
+  border: 0;
+  border-top: 1px solid #e2e4e2;
+  border-radius: 0;
 }
 
 .kg-node {
@@ -2019,11 +2020,11 @@ input:focus { border-color: #8fb8df; box-shadow: 0 0 0 3px rgba(77, 143, 216, .0
   left: 0;
   z-index: 10;
   max-height: 160px;
-  padding: 14px 16px;
+  padding: 15px 16px 16px;
   overflow: auto;
-  background: #fff;
-  border-top: 1px solid #e5e5e5;
-  border-radius: 12px 12px 0 0;
+  background: #fffefa;
+  border-top: 1px solid #e1e4e3;
+  border-radius: 0;
 }
 
 .kg-panel h4 {
@@ -2053,23 +2054,24 @@ input:focus { border-color: #8fb8df; box-shadow: 0 0 0 3px rgba(77, 143, 216, .0
 }
 
 .kg-container .react-flow {
-  background: #faf9f7;
+  background: #faf9f6;
 }
 
 .kg-container .react-flow__background pattern circle {
-  fill: #e8e8e8;
+  fill: #dfe3e3;
 }
 
 .kg-container .react-flow__controls {
   overflow: hidden;
-  border: 1px solid #e5e5e5;
-  border-radius: 8px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+  border: 1px solid #d9deda;
+  border-radius: 6px;
+  box-shadow: none;
 }
 
 .kg-container .react-flow__controls-button {
-  background: #fff;
-  border-bottom: 1px solid #e5e5e5;
+  color: #4d5a66;
+  background: #fffefa;
+  border-bottom: 1px solid #e1e4e3;
 }
 
 .kg-container .react-flow__controls-button:last-child {
@@ -2077,7 +2079,7 @@ input:focus { border-color: #8fb8df; box-shadow: 0 0 0 3px rgba(77, 143, 216, .0
 }
 
 .kg-container .react-flow__controls-button:hover {
-  background: #f7f7f7;
+  background: #f4f5f2;
 }
 
 .kg-container .react-flow__edge-path {
@@ -2097,115 +2099,125 @@ input:focus { border-color: #8fb8df; box-shadow: 0 0 0 3px rgba(77, 143, 216, .0
 
 
 /* Knowledge Graph layout extras */
+.react-flow__node-concept {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 150px;
+  height: 44px;
+}
+
 .concept-node {
   display: flex;
   align-items: center;
   justify-content: center;
-  min-width: 16px;
-  min-height: 16px;
-  width: 16px;
-  height: 16px;
+  width: 100%;
+  height: 100%;
+  min-width: 100%;
+  min-height: 100%;
   padding: 0;
-  border-radius: 50%;
-  background: #5b8fd4;
+  box-sizing: border-box;
+  border: 0;
+  background: transparent;
   line-height: 1;
   overflow: visible;
   cursor: pointer;
 }
 
+.concept-node.is-peripheral {
+  justify-content: flex-start;
+  gap: 6px;
+}
+
+.concept-node-dot {
+  width: 10px;
+  height: 10px;
+  flex: 0 0 10px;
+  background: #6f8fb3;
+  border: 1px solid #fffefa;
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px #cbd7e2;
+}
+
 .concept-node-label {
-  display: none;
-  max-width: 112px;
-  padding: 3px 6px;
+  display: -webkit-box;
+  max-width: 142px;
+  padding: 0;
   overflow: hidden;
-  color: #444;
-  font-size: 13px;
+  color: #666;
+  font-size: 12px;
   font-weight: 500;
-  line-height: 1.25;
-  background: rgba(250, 249, 247, 0.96);
-  border-radius: 6px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+  white-space: normal;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
 }
 
 .concept-node.is-core {
-  min-width: auto;
-  min-height: auto;
-  width: auto;
-  height: auto;
-  padding: 8px 14px;
-  border-radius: 10px;
-  background: #fff;
-  border: 1.5px solid #8bb7f0;
+  width: 100%;
+  height: 100%;
+  min-width: 100%;
+  min-height: 100%;
+  padding: 7px 12px;
+  box-sizing: border-box;
+  border-radius: 7px;
+  background: #fffefa;
+  border: 1px solid #a9bdd3;
+  box-shadow: 0 1px 2px rgba(37, 54, 72, 0.05);
 }
 
 .concept-node.is-core .concept-node-label {
   display: -webkit-box;
+  color: #263646;
   font-size: 14px;
-  font-weight: 600;
+  font-weight: 620;
+  letter-spacing: -0.01em;
 }
 
-/* 焦点/选中时展开：圆点变标签显示名字 */
-.concept-node.show-label {
-  width: auto;
-  height: auto;
-  min-width: auto;
-  min-height: auto;
-  padding: 4px 10px;
-  border-radius: 10px;
-  background: #fff;
-  border: 1.5px solid #8bb7f0;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
-  z-index: 10;
+.concept-node.is-selected,
+.concept-node.is-core.is-selected {
+  color: #244f82;
+  background: #f5f8fb;
+  border-color: #315f9f;
+  box-shadow: 0 0 0 1px rgba(49, 95, 159, 0.08);
 }
 
-.concept-node.show-label .concept-node-label {
-  display: -webkit-box;
+.concept-node.is-selected .concept-node-label {
+  color: #244f82;
 }
 
-/* 桌面 hover 展开（仅支持 hover 的设备生效，手机无 hover 靠点击） */
-@media (hover: hover) {
-  .concept-node:hover {
-    width: auto;
-    height: auto;
-    min-width: auto;
-    min-height: auto;
-    padding: 4px 10px;
-    border-radius: 10px;
-    background: #fff;
-    border: 1.5px solid #8bb7f0;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
-    z-index: 10;
-  }
-
-  .concept-node:hover .concept-node-label {
-    display: -webkit-box;
-  }
+.concept-node.is-peripheral.is-selected {
+  background: transparent;
+  border: 0;
+  box-shadow: none;
 }
 
-/* 手机端：圆点更大更易触控，加透明热区到 ~44px */
+.concept-node.is-peripheral.is-selected .concept-node-dot {
+  background: #315f9f;
+  box-shadow: 0 0 0 2px rgba(49, 95, 159, 0.14);
+}
+
+/* 手机端：外围名称固定为最多两行，核心卡片收窄以适配 356px。 */
 @media (max-width: 480px) {
-  .concept-node {
-    min-width: 20px;
-    min-height: 20px;
-    width: 20px;
-    height: 20px;
-    position: relative;
+  .react-flow__node-concept {
+    width: 106px;
+    height: 36px;
   }
 
-  .concept-node::before {
-    content: '';
-    position: absolute;
-    left: 50%;
-    top: 50%;
-    width: 44px;
-    height: 44px;
-    transform: translate(-50%, -50%);
+  .concept-node.is-peripheral .concept-node-label {
+    width: 90px;
+    max-width: 90px;
+    font-size: 11px;
+    line-height: 1.35;
   }
 
   .concept-node.is-core {
-    padding: 8px 12px;
-    font-size: 14px;
+    padding: 6px 8px;
+  }
+
+  .concept-node.is-core .concept-node-label {
+    font-size: 12px;
   }
 }
 
@@ -2213,21 +2225,26 @@ input:focus { border-color: #8fb8df; box-shadow: 0 0 0 3px rgba(77, 143, 216, .0
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 8px 12px;
-  background: #fff;
-  border: 1px solid #e5e5e5;
-  border-bottom: 0;
-  border-radius: 12px 12px 0 0;
+  min-height: 40px;
+  padding: 0 12px;
+  background: #fffefa;
+  border: 0;
+  border-radius: 0;
 }
 
 .kg-toolbar-meta {
+  color: #77828b;
   font-size: 12px;
-  color: #888;
+  font-variant-numeric: tabular-nums;
 }
 
 .kg-detail-card {
   padding: 0;
   overflow: hidden;
+  background: #fffefa;
+  border-color: #dfe2df;
+  border-radius: 10px;
+  box-shadow: none;
 }
 
 .kg-layout {
@@ -2256,16 +2273,16 @@ input:focus { border-color: #8fb8df; box-shadow: 0 0 0 3px rgba(77, 143, 216, .0
   align-items: center;
   margin-top: 8px;
   padding-top: 8px;
-  border-top: 1px solid #f0f0f0;
+  border-top: 1px solid #eceeeb;
   font-size: 13px;
 }
 
 .kg-panel-meta span {
-  color: #888;
+  color: #7a848b;
 }
 
 .kg-panel-meta strong {
-  color: #333;
+  color: #293640;
   font-weight: 600;
 }
 
@@ -2307,8 +2324,8 @@ input:focus { border-color: #8fb8df; box-shadow: 0 0 0 3px rgba(77, 143, 216, .0
   .kg-panel {
     position: relative;
     max-height: none;
-    border-top: 1px solid #e5e5e5;
-    border-radius: 0 0 12px 12px;
+    border-top: 1px solid #e1e4e3;
+    border-radius: 0;
   }
 }
 
