@@ -2402,121 +2402,19 @@ input:focus { border-color: #8fb8df; box-shadow: 0 0 0 3px rgba(77, 143, 216, .0
   }
 }
 
-/* 插画铺满右半侧，底部渐变保护文字（统一方案） */
-.evolution-page .growth-hero,
+/* 成本页 hero 统计 2 列布局（手机端） */
 .cost-page .growth-hero {
   position: relative;
-  overflow: hidden;
-  isolation: isolate;
 }
 
-.evolution-page .growth-hero > .growth-hero-heading,
-.evolution-page .growth-hero > p,
-.evolution-page .growth-hero > .growth-summary {
-  position: relative;
-  z-index: 1;
-  max-width: 55%;
-}
-
-.evolution-page .growth-hero-art {
-  position: absolute;
-  z-index: 0;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  width: 42%;
-  opacity: 1;
-  pointer-events: none;
-  -webkit-mask-image: linear-gradient(
-    to bottom,
-    transparent 0%,
-    rgba(0, 0, 0, 0.65) 35%,
-    #000 60%
-  );
-  mask-image: linear-gradient(
-    to bottom,
-    transparent 0%,
-    rgba(0, 0, 0, 0.65) 35%,
-    #000 60%
-  );
-}
-
-.cost-page .growth-hero > .growth-hero-heading,
-.cost-page .growth-hero > p,
-.cost-page .growth-hero > .growth-summary {
-  position: relative;
-  z-index: 1;
-  max-width: 55%;
-}
-
-.cost-page .growth-hero-art {
-  position: absolute;
-  z-index: 0;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  width: 42%;
-  opacity: 1;
-  pointer-events: none;
-  -webkit-mask-image: linear-gradient(
-    to bottom,
-    transparent 0%,
-    rgba(0, 0, 0, 0.65) 35%,
-    #000 60%
-  );
-  mask-image: linear-gradient(
-    to bottom,
-    transparent 0%,
-    rgba(0, 0, 0, 0.65) 35%,
-    #000 60%
-  );
-}
-
-.evolution-page .growth-hero-art img {
-  display: block;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  object-position: center;
-  border-radius: inherit;
-  filter: saturate(0.82) contrast(0.96);
-}
-
-/* Cost Center hero art（统一为知识库页 mask 渐变风格） */
-.cost-page .growth-hero {
-  position: relative;
-  overflow: hidden;
-  isolation: isolate;
-}
-
-/* 手机端（720px以下）：插画铺满右侧，底部渐变保护文字 */
+/* 手机端（720px以下） */
 @media (max-width: 720px) {
   .evolution-page .growth-hero {
-    padding-bottom: 60px;
-  }
-
-  .evolution-page .growth-hero-art {
-    top: 0;
-    right: 0;
-    bottom: 0;
-    width: 48%;
-    opacity: 1;
-    -webkit-mask-image: linear-gradient(
-      to bottom,
-      transparent 0%,
-      rgba(0, 0, 0, 0.7) 40%,
-      #000 70%
-    );
-    mask-image: linear-gradient(
-      to bottom,
-      transparent 0%,
-      rgba(0, 0, 0, 0.7) 40%,
-      #000 70%
-    );
+    padding-bottom: 0;
   }
 
   .cost-page .growth-hero {
-    padding-bottom: 80px;
+    padding-bottom: 0;
   }
 
   .cost-page .growth-hero > .growth-summary {
@@ -2527,30 +2425,9 @@ input:focus { border-color: #8fb8df; box-shadow: 0 0 0 3px rgba(77, 143, 216, .0
   .cost-page .growth-hero > .growth-summary > div:nth-child(4) { border-top: 1px solid var(--line); }
   .cost-page .growth-hero > .growth-summary > div:last-child { grid-column: auto; border-right: 0; }
 
-  .cost-page .growth-hero-art {
-    top: 0;
-    right: 0;
-    bottom: 0;
-    width: 48%;
-    opacity: 1;
-    -webkit-mask-image: linear-gradient(
-      to bottom,
-      transparent 0%,
-      rgba(0, 0, 0, 0.7) 40%,
-      #000 70%
-    );
-    mask-image: linear-gradient(
-      to bottom,
-      transparent 0%,
-      rgba(0, 0, 0, 0.7) 40%,
-      #000 70%
-    );
-  }
-
   .cost-page .growth-hero > .cost-page-subnote {
     position: relative;
     z-index: 1;
-    max-width: 70%;
   }
 }
 
