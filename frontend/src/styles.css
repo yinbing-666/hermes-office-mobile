@@ -521,7 +521,7 @@ input:focus { border-color: #8fb8df; box-shadow: 0 0 0 3px rgba(77, 143, 216, .0
 .growth-summary { display: grid; grid-template-columns: .8fr .9fr 1.5fr; border: 1px solid var(--line); border-radius: 9px; overflow: hidden; background: var(--surface-soft); }
 .growth-summary > div { min-width: 0; display: grid; gap: 5px; padding: 12px; border-right: 1px solid var(--line); }
 .growth-summary > div:last-child { border-right: 0; }
-.growth-summary strong { overflow: hidden; color: #2d353b; font-size: 16px; font-weight: 650; line-height: 1.2; text-overflow: ellipsis; white-space: nowrap; }
+.growth-summary strong { overflow: hidden; color: #2d353b; font-size: 16px; font-weight: 650; line-height: 1.2; }
 .growth-summary span { color: var(--subtle); font-size: var(--font-assist); }
 
 .capability-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 9px; }
@@ -1709,7 +1709,7 @@ input:focus { border-color: #8fb8df; box-shadow: 0 0 0 3px rgba(77, 143, 216, .0
 .cost-page .trend-bar { flex-direction: column-reverse; justify-content: flex-start; }
 .cost-page .trend-input { background: var(--brand); }
 .cost-page .trend-output { background: #4f8a68; }
-.cost-page .trend-cache { background: #cbd2d4; }
+.cost-page .trend-cache { background: #8a9aaa; }
 .cost-trend-legend {
   display: flex;
   align-items: center;
@@ -2361,8 +2361,11 @@ input:focus { border-color: #8fb8df; box-shadow: 0 0 0 3px rgba(77, 143, 216, .0
 }
 
 @media (max-width: 767px) {
+  /* 限制 hero 高度，防止插画把下方内容挤出首屏 */
   .knowledge-page .growth-hero {
-    padding-bottom: 132px;
+    padding-bottom: 12px;
+    max-height: 220px;
+    overflow: hidden;
   }
 
   .knowledge-page .growth-hero > .growth-hero-heading,
@@ -2371,24 +2374,25 @@ input:focus { border-color: #8fb8df; box-shadow: 0 0 0 3px rgba(77, 143, 216, .0
     max-width: none;
   }
 
-  /* 手机：插画铺满右侧，底部渐变保护文字 */
+  /* 手机：插画占右上 30%，高度受限不超出 hero */
   .knowledge-page .growth-hero-art {
     top: 0;
     right: 0;
-    bottom: 0;
-    width: 48%;
+    bottom: auto;
+    width: 32%;
+    height: 100%;
     opacity: 1;
     -webkit-mask-image: linear-gradient(
       to bottom,
       transparent 0%,
-      rgba(0, 0, 0, 0.7) 40%,
-      #000 70%
+      rgba(0, 0, 0, 0.6) 30%,
+      #000 55%
     );
     mask-image: linear-gradient(
       to bottom,
       transparent 0%,
-      rgba(0, 0, 0, 0.7) 40%,
-      #000 70%
+      rgba(0, 0, 0, 0.6) 30%,
+      #000 55%
     );
   }
 
