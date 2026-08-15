@@ -302,7 +302,7 @@ function AgentCard({ agent, active, onClick }: { agent: AgentInfo; active: boole
 
 function VirtualOfficeCard({ onSelectAgent }: { onSelectAgent: (agentId: string) => void }) {
   return (
-    <div className="virtual-office-card" aria-label="虚拟办公室空间示意">
+    <div className="virtual-office-card office-card" aria-label="虚拟办公室空间示意">
       <div className="office-scene-header">
         <div className="virtual-office-heading">
           <div>
@@ -455,7 +455,7 @@ function ChannelHealthCard({ channels }: { channels: ChannelHealth[] }) {
 function HomeTaskFocus({ tasks, onOpenTasks }: { tasks: TaskItem[]; onOpenTasks: () => void }) {
   const priorityTasks = tasks.filter((task) => task.status === 'blocked' || task.status === 'running').slice(0, 6);
   return (
-    <div className="home-focus-card">
+    <div className="home-focus-card office-card">
       <div className="section-heading">
         <div><p className="section-kicker">Today</p><h2>今日待处理</h2></div>
         <button className="section-action" type="button" onClick={onOpenTasks}>查看任务</button>
@@ -488,7 +488,7 @@ function HomeTaskFocus({ tasks, onOpenTasks }: { tasks: TaskItem[]; onOpenTasks:
 
 function QuickDispatchCard({ agents, onSelectAgent }: { agents: AgentInfo[]; onSelectAgent: (agentId: string) => void }) {
   return (
-    <div className="quick-dispatch-card">
+    <div className="quick-dispatch-card office-card">
       <div className="section-heading">
         <div><p className="section-kicker">Quick Dispatch</p><h2>快速派活</h2></div>
         <span>选择员工后输入任务</span>
@@ -529,10 +529,9 @@ function OfficePage({ agents, tasks, selectedId, onSelectAgent, onOpenTasks, bac
   const knowledgeTotal = knowledgeState.status === 'loading' ? '—' : knowledge.total ?? 0;
   return (
     <section className="page-section">
-      <div className="office-overview">
+      <div className="office-overview office-card">
         <div className="office-overview-content">
           <div className="overview-heading">
-            <div className="overview-mark"><OfficeIcon name="office" size={24} /></div>
             <div>
               <p className="eyebrow">Hermes Workspace</p>
               <h1>Hermes 办公室</h1>
@@ -549,9 +548,6 @@ function OfficePage({ agents, tasks, selectedId, onSelectAgent, onOpenTasks, bac
             <div><strong className={`metric-value metric-value-compact${todayIngestLoading ? ' metric-value-loading' : todayIngest === 0 ? ' metric-value-zero' : ''}`}>{todayIngest}</strong><small className="metric-label">今日知识入库</small></div>
             <div><strong className={`metric-value metric-value-compact${knowledgeTotal === '—' ? ' metric-value-loading' : knowledgeTotal === 0 ? ' metric-value-zero' : ''}`}>{knowledgeTotal}</strong><small className="metric-label">知识库总量</small></div>
           </div>
-        </div>
-        <div className="office-hero" aria-hidden="true">
-          <img src="/images/office-hero.webp" alt="" />
         </div>
       </div>
       <VirtualOfficeCard onSelectAgent={onSelectAgent} />
@@ -655,7 +651,7 @@ function AgentPage({ agents, selectedId, onSelectAgent, agent, tasks, evolution,
           </button>
         </div>
       )}
-      <div className="detail-card employee-hero">
+      <div className="detail-card employee-hero office-card">
         <div className="employee-identity">
           <AgentPortrait tone={meta.tone} avatar={meta.avatar} name={agent.name} large />
           <div>
@@ -673,13 +669,13 @@ function AgentPage({ agents, selectedId, onSelectAgent, agent, tasks, evolution,
         </div>
       </div>
 
-      <div className="employee-section-card">
+      <div className="employee-section-card office-card">
         <div className="employee-section-head">
           <div className="employee-section-icon"><OfficeIcon name="agent" size={18} /></div>
           <div><span>Team Directory</span><h3>员工目录</h3></div>
           <small>{agents.length} 位</small>
         </div>
-        <div className="workspace-member-options" role="tablist" aria-label="切换员工">
+        <div className="workspace-member-options employee-directory-list" role="tablist" aria-label="切换员工">
           {agents.map((item) => {
             const itemMeta = roleMap[item.id] ?? fallbackRole;
             const selected = item.id === selectedId;
@@ -704,7 +700,7 @@ function AgentPage({ agents, selectedId, onSelectAgent, agent, tasks, evolution,
         </div>
       </div>
 
-      <div className="employee-section-card">
+      <div className="employee-section-card office-card">
         <div className="employee-section-head">
           <div className="employee-section-icon"><OfficeIcon name="monitor" size={18} /></div>
           <div><span>Current Status</span><h3>当前状态</h3></div>
@@ -716,7 +712,7 @@ function AgentPage({ agents, selectedId, onSelectAgent, agent, tasks, evolution,
         </div>
       </div>
 
-      <div className="employee-section-card">
+      <div className="employee-section-card office-card">
         <div className="employee-section-head">
           <div className="employee-section-icon"><OfficeIcon name="activity" size={18} /></div>
           <div><span>Recent Tasks</span><h3>最近任务</h3></div>
@@ -741,7 +737,7 @@ function AgentPage({ agents, selectedId, onSelectAgent, agent, tasks, evolution,
         ) : <div className="agent-empty-state"><OfficeIcon name="clock" size={18} /><span>最近任务待记录</span></div>}
       </div>
 
-      <div className="employee-section-card">
+      <div className="employee-section-card office-card">
         <div className="employee-section-head">
           <div className="employee-section-icon"><OfficeIcon name="file" size={18} /></div>
           <div><span>Work Assets</span><h3>最近产出与档案</h3></div>
@@ -758,7 +754,7 @@ function AgentPage({ agents, selectedId, onSelectAgent, agent, tasks, evolution,
           </div>
         </div>
       </div>
-      <div className="compose-card">
+      <div className="compose-card office-card">
         <div className="card-title-row">
           <OfficeIcon name="message" size={19} />
           <label htmlFor="agent-task">派活入口</label>
@@ -831,21 +827,36 @@ function EvolutionPage({ evolution, growth, growthState, onRetryGrowth }: { evol
 
   return (
     <section className="page-section evolution-page">
-      <div className="growth-hero">
+      <div className="growth-hero office-card">
         <div className="growth-hero-heading">
           <div className="overview-mark"><OfficeIcon name="growth" size={24} /></div>
           <div><p className="eyebrow">Growth Archive</p><h1>进化档案</h1></div>
         </div>
         <p>把能力沉淀、人格文件与最近变化整理成可持续追踪的成长档案。</p>
-        <div className="growth-summary">
-          <div><strong>{evolution.skills?.available ? skillCount : '暂无'}</strong><span>能力记录</span></div>
-          <div><strong>{profiles.length ? `${readyProfiles}/${profiles.length}` : '暂无'}</strong><span>档案完整</span></div>
-          <div><strong>{formatTime(latestEvolution)}</strong><span>最近进化</span></div>
+        <div className="growth-hero-grid">
+          <div className="growth-summary evolution-data-card" aria-label="进化指标">
+            <div><strong>{evolution.skills?.available ? skillCount : '暂无'}</strong><span>能力记录</span></div>
+            <div><strong>{profiles.length ? `${readyProfiles}/${profiles.length}` : '暂无'}</strong><span>档案完整</span></div>
+            <div><strong>{formatTime(latestEvolution)}</strong><span>最近进化</span></div>
+          </div>
+          <div className="growth-hero-trend evolution-data-card">
+            <div className="growth-hero-trend-head"><span>近期趋势</span><strong>{trendTotal} 次变化</strong></div>
+            {trend.length === 0 ? <p className="growth-hero-empty">暂无趋势数据</p> : (
+              <div className="growth-hero-bars" aria-label="近期能力变化趋势">
+                {trend.slice(-7).map((item) => (
+                  <div key={item.date} title={`${item.date} · ${item.total_changes} 次变化`}>
+                    <i style={{ height: `${Math.max((item.total_changes / trendMaximum) * 100, item.total_changes > 0 ? 8 : 2)}%` }} />
+                    <small>{item.date.slice(5)}</small>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
       <div className="section-heading"><div><p className="section-kicker">Growth Records</p><h2>成长记录</h2></div><span>{growthState.status === 'loading' ? '加载中' : growthState.status === 'error' ? '加载失败' : growth.total ? `${growth.total} 条真实记录` : '待记录'}</span></div>
-      <div className="archive-card growth-records-card">
+      <div className="archive-card growth-records-card evolution-data-card">
         {growthState.status !== 'success' ? <ResourceStateCard state={growthState} onRetry={onRetryGrowth} label="成长记录" /> : growth.records.length === 0 ? <p className="archive-empty">暂无成长记录。试着在办公室记一笔「成长」吧。</p> : (
           <div className="growth-records-list">
             {growth.records.slice(0, 12).map((record) => {
@@ -865,7 +876,7 @@ function EvolutionPage({ evolution, growth, growthState, onRetryGrowth }: { evol
       <div className="section-heading"><div><p className="section-kicker">Capability Matrix</p><h2>能力矩阵</h2></div><span>按现有 Skill 名称归档</span></div>
       <div className="capability-grid">
         {capabilityMatrix.map((capability) => (
-          <div className="capability-card" key={capability.title}>
+          <div className="capability-card evolution-data-card" key={capability.title}>
             <div className="capability-icon"><OfficeIcon name={capability.icon} size={18} /></div>
             <div><strong>{capability.title}</strong><small>{capability.matched.length ? `已记录 ${capability.matched.length} 项` : '待记录'}</small></div>
             <span className={capability.matched.length ? 'capability-state recorded' : 'capability-state'}>{capability.matched.length ? '已有沉淀' : '暂无数据'}</span>
@@ -874,7 +885,7 @@ function EvolutionPage({ evolution, growth, growthState, onRetryGrowth }: { evol
       </div>
 
       <div className="section-heading"><div><p className="section-kicker">Growth Trend</p><h2>能力增长曲线</h2></div><span>最近 7 天 · {trendTotal} 次变化</span></div>
-      <div className="archive-card trend-card">
+      <div className="archive-card trend-card evolution-data-card">
         <div className="trend-legend">
           <span><i className="skill" />Skill 修改</span>
           <span><i className="profile" />档案修改</span>
@@ -896,7 +907,7 @@ function EvolutionPage({ evolution, growth, growthState, onRetryGrowth }: { evol
       </div>
 
       <div className="section-heading"><div><p className="section-kicker">Milestones</p><h2>进化里程碑</h2></div><span>{milestones.length ? `${milestones.length} 条真实记录` : '待记录'}</span></div>
-      <div className="archive-card milestone-card">
+      <div className="archive-card milestone-card evolution-data-card">
         {milestones.length === 0 ? <p className="archive-empty">暂无里程碑记录。</p> : milestones.map((milestone, index) => (
           <div className="milestone-event" key={`${milestone.type}-${milestone.date}-${milestone.title}`}>
             <div className="milestone-rail"><span><OfficeIcon name={milestoneIcons[milestone.type] ?? 'file'} size={15} /></span>{index < milestones.length - 1 && <i />}</div>
@@ -914,7 +925,7 @@ function EvolutionPage({ evolution, growth, growthState, onRetryGrowth }: { evol
           const childrenId = `skill-tree-${group.key}`;
 
           return (
-            <div className="skill-tree-card" key={group.key}>
+            <div className="skill-tree-card evolution-data-card" key={group.key}>
               <div className="skill-tree-head">
                 <span><OfficeIcon name={skillTreeIcons[group.key] ?? 'growth'} size={17} /></span>
                 <div><strong>{group.title}</strong><small>{group.children.length ? `${group.children.length} 项能力` : '待记录'}</small></div>
@@ -941,7 +952,7 @@ function EvolutionPage({ evolution, growth, growthState, onRetryGrowth }: { evol
       <div className="section-heading"><div><p className="section-kicker">Employee Profiles</p><h2>员工档案卡</h2></div><span>{profiles.length || 0} 份档案</span></div>
       <div className="profile-archive-list">
         {profiles.length === 0 ? <div className="empty-card">暂无员工档案。</div> : profiles.map((profile) => (
-          <div className="profile-archive-card" key={profile.profile}>
+          <div className="profile-archive-card evolution-data-card" key={profile.profile}>
             <div className="profile-archive-head">
               <div className="profile-avatar"><OfficeIcon name="user" size={20} /></div>
               <div><strong>{profile.name}</strong><small>{profile.profile}</small></div>
