@@ -142,11 +142,34 @@ def utc_now() -> str:
 
 
 def safe_display_path(path: Path) -> str:
-    """对外展示路径时脱敏：返回相对 HERMES_HOME 的路径，避免暴露本机绝对路径。"""
+    """对外展示路径时脱敏：优先返回相对 HERMES_HOME 的路径，其次相对 PROJECT_ROOT，
+    兜底只返回文件名，任何情况下都不暴露本机绝对路径。"""
     try:
         return str(path.relative_to(HERMES_HOME))
     except ValueError:
-        return str(path)
+        pass
+    try:
+        return str(path.relative_to(PROJECT_ROOT))
+    except ValueError:
+        return path.name
+
+
+def safe_wiki_path(path_str: str) -> str:
+    """知识文件路径脱敏：优先返回相对 WIKI_HOME 的路径；索引由外部工具生成，
+    可能指向其它 wiki 根（如 ~/wiki/），则截掉绝对路径前缀只保留 wiki 内相对部分；
+    兜底只返回文件名。任何情况下都不暴露本机绝对路径。"""
+    path = Path(path_str)
+    try:
+        return str(path.relative_to(WIKI_HOME))
+    except ValueError:
+        pass
+    marker = "/wiki/"
+    index = path_str.rfind(marker)
+    if index != -1:
+        return path_str[index + len(marker):]
+    if path.is_absolute():
+        return path.name
+    return path_str
 
 
 def iso_mtime(path: Path) -> str | None:
@@ -278,8 +301,11 @@ def write_outbox_message(
         "fallback_reason": fallback_reason,
     }
     OUTBOX_FILE.parent.mkdir(parents=True, exist_ok=True)
-    with OUTBOX_FILE.open("a", encoding="utf-8") as handle:
-        handle.write(json.dumps(record, ensure_ascii=False) + "\n")
+    # 锁内完成 append：与 retry_outbox 的整文件 replace 互斥，避免打开旧 inode 导致新消息丢失
+    with _OUTBOX_LOCK:
+        with OUTBOX_FILE.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(record, ensure_ascii=False) + "\n")
+        os.chmod(OUTBOX_FILE, 0o600)
 
 
 def read_outbox_records() -> list[dict[str, Any]]:
@@ -332,6 +358,7 @@ def write_outbox_records(records: list[dict[str, Any]]) -> None:
         for record in records:
             clean = {key: value for key, value in record.items() if key != "id"}
             handle.write(json.dumps(clean, ensure_ascii=False) + "\n")
+    os.chmod(tmp_path, 0o600)
     tmp_path.replace(OUTBOX_FILE)
 
 
@@ -346,6 +373,7 @@ def write_sent_record(record: dict[str, Any], response_preview: str) -> None:
     })
     with SENT_FILE.open("a", encoding="utf-8") as handle:
         handle.write(json.dumps(payload, ensure_ascii=False) + "\n")
+    os.chmod(SENT_FILE, 0o600)
 
 
 def compact_outbox_record(record: dict[str, Any]) -> dict[str, Any]:
@@ -1886,6 +1914,7 @@ def save_workflows(workflows: list[dict[str, Any]]) -> None:
         json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
     )
+    os.chmod(tmp_path, 0o600)
     tmp_path.replace(WORKFLOWS_FILE)
 
 
@@ -2824,11 +2853,23 @@ def knowledge_topics() -> dict[str, Any]:
         files = topic.get("files", [])
         if not isinstance(files, list):
             files = []
+        topic_files: list[dict[str, Any]] = []
+        for item in files[:50]:
+            if not isinstance(item, dict):
+                continue
+            raw_path = str(item.get("path", ""))
+            topic_files.append(
+                {
+                    "path": safe_wiki_path(raw_path),
+                    "name": Path(raw_path).name,
+                    "reason": item.get("reason", ""),
+                }
+            )
         topics.append(
             {
                 "name": topic.get("name", ""),
                 "count": topic.get("count", len(files)),
-                "files": files[:50],
+                "files": topic_files,
             }
         )
 
@@ -2870,7 +2911,7 @@ def knowledge_topic(name: str):
                 path = str(item.get("path", ""))
                 files.append(
                     {
-                        "path": path,
+                        "path": safe_wiki_path(path),
                         "name": Path(path).name,
                         "reason": item.get("reason", ""),
                     }
