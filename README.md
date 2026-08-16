@@ -103,7 +103,7 @@ backend/.venv/bin/python -m py_compile \
   backend/local_security.py \
   backend/manage_local_auth.py
 cd backend
-.venv/bin/python -m unittest -v test_access_security.py test_local_security.py
+.venv/bin/python -m unittest -v test_local_security.py
 ```
 
 Run the frontend type check and production build:

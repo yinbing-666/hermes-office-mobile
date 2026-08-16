@@ -749,6 +749,10 @@ class SecurityManager:
             httponly=True,
             samesite="strict",
         )
+        if self.settings.enabled:
+            request_id = self._request_id(request.headers.get(REQUEST_ID_HEADER))
+            source = request_source(request)
+            self._audit_logout(source, request_id, 200, "logout_succeeded")
         return response
 
     def session_payload(self, request: Request) -> dict[str, Any]:
@@ -853,6 +857,25 @@ class SecurityManager:
             "role": "anonymous",
             "method": "POST",
             "path": "/api/auth/login",
+            "request_id": request_id,
+            "status_code": status_code,
+            "outcome": outcome,
+        }
+        self._append_audit(record)
+
+    def _audit_logout(
+        self,
+        source: str,
+        request_id: str,
+        status_code: int,
+        outcome: str,
+    ) -> None:
+        record = {
+            "timestamp": time.time(),
+            "actor_hash": hashlib.sha256(source.encode("utf-8")).hexdigest()[:16],
+            "role": "anonymous",
+            "method": "POST",
+            "path": "/api/auth/logout",
             "request_id": request_id,
             "status_code": status_code,
             "outcome": outcome,

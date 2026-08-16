@@ -35,14 +35,14 @@ cd ~/backend
 
 生产服务继续绑定 `127.0.0.1`，由 Nginx 反向代理；不要为临时调试改成 `0.0.0.0`。
 
-本地认证的生产 systemd drop-in 模板位于 `systemd/hermes-office-mobile-bff.service.d/auth.conf`。模板不包含密码或其他凭证；启用时复制到用户级 systemd 目录，执行 `daemon-reload` 后重启服务。真实密码仅保存在权限为 `0600` 的 `runtime/local-auth.json`，不得写入 unit 或仓库。
+本地认证的生产 systemd drop-in 模板（`systemd/hermes-office-mobile-bff.service.d/auth.conf`）属本地运维文件，已通过 `.gitignore` 排除不入库；启用时在本地创建并复制到用户级 systemd 目录，执行 `daemon-reload` 后重启服务。模板不包含密码或其他凭证；真实密码仅保存在权限为 `0600` 的 `runtime/local-auth.json`，不得写入 unit 或仓库。
 
 ## 不发布验证
 
 ```bash
 cd ~/backend
 .venv/bin/python -m py_compile main.py local_security.py manage_local_auth.py test_local_security.py
-.venv/bin/python -m unittest -v test_access_security.py test_local_security.py
+.venv/bin/python -m unittest -v test_local_security.py
 ```
 
 运行中的生产服务尚未重启时，可继续只读调用现有 GET；启用 `local` 后，除 `GET /api/session` 和 `POST /api/auth/login` 外的 API 都需要有效会话。Tailscale SSH 仅用于运行交互式密码重置、查看脱敏状态和恢复服务，不提供 HTTP 绕过。
@@ -53,7 +53,6 @@ Interactive OpenAPI documentation is available at `http://127.0.0.1:8787/docs` w
 
 - [`../docs/architecture.md`](../docs/architecture.md)
 - [`../docs/api.md`](../docs/api.md)
-- [`../docs/operations.md`](../docs/operations.md)
 - [`../docs/acceptance.md`](../docs/acceptance.md)
 - [`../docs/specs/2026-08-01-local-auth-security-design.md`](../docs/specs/2026-08-01-local-auth-security-design.md)
 - [`../docs/specs/2026-08-01-access-security-design.md`](../docs/specs/2026-08-01-access-security-design.md)（已停止）

@@ -6,7 +6,7 @@
 | 层 | 技术 | 说明 |
 |---|---|---|
 | Frontend | Vite + React + TypeScript | Mobile-first PWA |
-| UI | Tailwind CSS + custom components | Warm Minimal + office card style |
+| UI | 原生 CSS + custom components | Warm Minimal + office card style |
 | Backend | FastAPI BFF | Read local Hermes profiles/logs/status and proxy future Hermes API calls |
 | Storage | Existing Hermes files/logs + JSON fallback | v1 does not introduce database |
 

@@ -2,6 +2,8 @@ name = "hermes-office-api"
 main = "worker/index.ts"
 compatibility_date = "2024-01-01"
 
+# KV namespace id 是账号资源标识，请在 Cloudflare dashboard 创建后替换为本人的 id；
+# 不要把真实 id 提交到公开仓库。
 [[kv_namespaces]]
 binding = "TOPICS_KV"
-id = "47c230fe8e6e4428b0d437773801ec83"
+id = "your-kv-namespace-id"

@@ -43,6 +43,8 @@ WIKI_HOME = Path(os.environ.get("HERMES_WIKI_HOME", HERMES_HOME / "wiki")).expan
 VAULT_HOME = Path(os.environ.get("HERMES_VAULT_HOME", HERMES_HOME / "vault")).expanduser()
 TOKEN_TRACKER_SITE_PACKAGES = os.environ.get("TOKEN_TRACKER_SITE_PACKAGES", "").strip()
 TOKEN_TRACKER_PYTHON = os.environ.get("TOKEN_TRACKER_PYTHON", sys.executable).strip()
+if TOKEN_TRACKER_SITE_PACKAGES and TOKEN_TRACKER_SITE_PACKAGES not in sys.path:
+    sys.path.insert(0, TOKEN_TRACKER_SITE_PACKAGES)
 PROJECT_ROOT = Path(__file__).resolve().parent
 REPOSITORY_ROOT = PROJECT_ROOT.parent
 OUTBOX_FILE = PROJECT_ROOT / "runtime" / "outbox.jsonl"
@@ -59,13 +61,6 @@ PIPELINE_JOBS_LOCK = threading.Lock()
 _WORKFLOWS_LOCK = threading.Lock()
 _OUTBOX_LOCK = threading.Lock()
 SHANGHAI_TZ = ZoneInfo("Asia/Shanghai")
-
-CAPABILITY_GROUPS = (
-    {"name": "工具调用", "keywords": ["api", "cli", "tool", "browser", "search", "shell", "mcp"]},
-    {"name": "内容理解", "keywords": ["doc", "pdf", "content", "media", "read", "write", "summary", "transcript"]},
-    {"name": "专家协作", "keywords": ["agent", "team", "expert", "delegate", "invest", "collaborat"]},
-    {"name": "自动化任务", "keywords": ["task", "workflow", "cron", "automation", "schedule"]},
-)
 
 PROFILE_DEFINITIONS = (
     {
@@ -827,7 +822,6 @@ def health() -> dict[str, Any]:
         "service": "hermes-office-mobile-bff",
         "timestamp": utc_now(),
         "hermes_home": {
-            "path": str(HERMES_HOME),
             "available": HERMES_HOME.is_dir(),
         },
         "sources": {
@@ -844,10 +838,8 @@ def health() -> dict[str, Any]:
 @app.get("/api/token-usage")
 def token_usage() -> dict[str, Any]:
     """今日 Token 消耗与节省统计，数据来自 Hermes state.db session_model_usage 表。"""
-    import datetime, sqlite3
-    today = datetime.date.today()
-    today_start = datetime.datetime.combine(today, datetime.time.min).timestamp()
-    today_end = datetime.datetime.combine(today, datetime.time.max).timestamp()
+    today = datetime.now(SHANGHAI_TZ).date()
+    today_start = datetime.combine(today, datetime.min.time(), tzinfo=SHANGHAI_TZ).timestamp()
 
     db_path = HERMES_HOME / "state.db"
     if not db_path.is_file():
@@ -874,8 +866,6 @@ def token_usage() -> dict[str, Any]:
 
     # 成本估算：复用 token-tracker 的 litellm 定价（与 Codex 区块同源）
     try:
-        if TOKEN_TRACKER_SITE_PACKAGES:
-            sys.path.insert(0, TOKEN_TRACKER_SITE_PACKAGES)
         from token_tracker.analyzer.cost import calculate_cost
         from token_tracker.adapters.types import UsageEntry
         from datetime import datetime as _dt, timezone as _tz
@@ -919,7 +909,7 @@ def token_usage() -> dict[str, Any]:
             "cache_read_tokens": cr,
             "api_calls": calls,
             "cost_usd": round(cost, 4),
-            "last_seen": datetime.datetime.fromtimestamp(last).isoformat() if last else None,
+            "last_seen": datetime.fromtimestamp(last, tz=SHANGHAI_TZ).isoformat() if last else None,
         })
 
     return {
@@ -977,7 +967,6 @@ def agents() -> dict[str, Any]:
             {
                 "id": profile_id,
                 "name": definition["name"],
-                "profile_path": str(profile_path),
                 "profile_available": profile_path.is_dir(),
                 "status": "online" if listening else "offline",
                 "port": port,
@@ -2283,7 +2272,7 @@ def _send_to_hermes(agent_id: str, message: str, batch_id: str) -> dict[str, Any
         "media-ops": ("mimo-sg2", 8650),
         "investor": ("mimo-sg3", 8660),
     }
-    profile_name, port = profile_map.get(agent_id, ("mimo-sg1", 8642))
+    _, port = profile_map.get(agent_id, ("mimo-sg1", 8642))
 
     payload = {
         "jsonrpc": "2.0",
@@ -2380,9 +2369,7 @@ def _execute_expert_pipeline(req: PipelineRequest, batch_id: str) -> dict[str, A
     steps: list[dict[str, Any]] = []
     context_so_far: dict[str, str] = {}
 
-    # 确定需要执行的角色顺序
     # CEO → PM → CS，只执行在 member_ids 中的
-    role_order = ["default", "media-ops", "investor"]
     role_prompts = {
         "default": "你正在参与工作空间“{workspace}”的深度分析。请从主控汇总视角梳理问题、协调判断，并形成可供后续汇总的执行意见。\n\n原始问题：{question}",
         "media-ops": "你正在参与工作空间“{workspace}”的深度分析。\n\nCEO（小黑）的分析：\n{ceo_response}\n\n请在此基础上，从内容传播视角分析受众、表达、渠道与传播执行重点。",
@@ -2912,8 +2899,8 @@ def knowledge_graph(topic: str = "") -> dict[str, Any]:
 
     if topic:
         # 过滤：只保留该主题的节点 + 两端都在内的边
-        node_ids = {n["id"] for n in nodes if n.get("topic") == topic}
-        filtered_nodes = [n for n in nodes if n.get("topic") == topic]
+        filtered_nodes = [n for n in nodes if n.get("topic") == topic and "id" in n]
+        node_ids = {n["id"] for n in filtered_nodes}
         filtered_edges = [
             e for e in edges
             if e.get("source") in node_ids and e.get("target") in node_ids
