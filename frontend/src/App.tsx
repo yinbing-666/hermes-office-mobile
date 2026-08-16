@@ -131,6 +131,10 @@ const taskStatusMeta: Record<TaskStatus, { label: string; icon: OfficeIconName }
   event: { label: '事件', icon: 'activity' },
 };
 
+function getTaskStatusMeta(status: string): { label: string; icon: OfficeIconName } {
+  return taskStatusMeta[status as TaskStatus] ?? { label: '未知', icon: 'clock' };
+}
+
 const taskSourceLabels: Record<string, string> = { cron: '定时任务', outbox: '兜底队列', sent: '已送达', gateway: '网关事件', kanban: '智能看板' };
 
 function formatTime(value?: string | null) {
@@ -411,7 +415,7 @@ function ResourceTaskOverview({ tasks }: { tasks: TaskItem[] }) {
       <div className="office-recent-tasks">
         <div className="office-recent-heading"><strong>最近任务</strong><span>{recentTasks.length} 条摘要</span></div>
         {recentTasks.length > 0 ? recentTasks.map((task) => {
-          const meta = taskStatusMeta[task.status];
+          const meta = getTaskStatusMeta(task.status);
           return (
             <div className="office-recent-task" key={task.id}>
               <div className={`task-check ${task.status}`}><OfficeIcon name={meta.icon} size={14} /></div>
@@ -463,7 +467,7 @@ function HomeTaskFocus({ tasks, onOpenTasks }: { tasks: TaskItem[]; onOpenTasks:
       {priorityTasks.length > 0 ? (
         <div className="home-task-list">
           {priorityTasks.map((task) => {
-            const meta = taskStatusMeta[task.status];
+            const meta = getTaskStatusMeta(task.status);
             return (
               <button className="home-task-row" type="button" key={task.id} onClick={onOpenTasks}>
                 <span className={`task-check ${task.status}`}><OfficeIcon name={meta.icon} size={15} /></span>
@@ -721,7 +725,7 @@ function AgentPage({ agents, selectedId, onSelectAgent, agent, tasks, evolution,
         {recentTasks.length > 0 ? (
           <div className="agent-task-list">
             {recentTasks.map((task) => {
-              const taskMeta = taskStatusMeta[task.status];
+              const taskMeta = getTaskStatusMeta(task.status);
               return (
                 <div className="agent-task-item" key={task.id}>
                   <div className={`task-check ${task.status}`}><OfficeIcon name={taskMeta.icon} size={15} /></div>
@@ -2092,6 +2096,10 @@ export default function App() {
       setKnowledgeState(initialResourceState);
       setCostState(initialResourceState);
       setOffline(false);
+      setSelectedId('');
+      setTab('office');
+      setCameFromOffice(false);
+      if (urlSyncRef) urlSyncRef.current = false;
     } catch (error) {
       setAuthError(error instanceof Error ? error.message : '退出失败，请稍后重试。');
     }

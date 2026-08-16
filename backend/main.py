@@ -246,8 +246,16 @@ def deliver_to_api_server(port: int, key: str, message: str) -> str:
         },
         method="POST",
     )
-    with urllib.request.urlopen(request, timeout=MESSAGE_TIMEOUT_SECONDS) as response:
-        payload = json.loads(response.read().decode("utf-8"))
+    try:
+        with urllib.request.urlopen(request, timeout=MESSAGE_TIMEOUT_SECONDS) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    except (
+        urllib.error.URLError,
+        urllib.error.HTTPError,
+        TimeoutError,
+        json.JSONDecodeError,
+    ) as e:
+        raise RuntimeError(f"deliver to api_server failed: {e}") from e
     return response_content(payload)
 
 
@@ -1671,6 +1679,7 @@ def retry_outbox(payload: OutboxRetryRequest) -> dict[str, Any]:
                         UnicodeError,
                         json.JSONDecodeError,
                         urllib.error.URLError,
+                        RuntimeError,
                     ):
                         reason = "api_request_failed"
                 else:
@@ -2212,8 +2221,18 @@ def _sync_llm_call(url: str, key: str, model: str, prompt: str, max_tokens: int 
         headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json", "User-Agent": "Mozilla/5.0"},
         method="POST"
     )
-    with urllib.request.urlopen(req, timeout=60) as resp:
-        return json.loads(resp.read())["choices"][0]["message"]["content"]
+    try:
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            return json.loads(resp.read())["choices"][0]["message"]["content"]
+    except (
+        urllib.error.URLError,
+        urllib.error.HTTPError,
+        TimeoutError,
+        json.JSONDecodeError,
+        KeyError,
+    ) as e:
+        logger.exception("LLM call failed: %s", e)
+        return ""
 
 
 def _read_agent_response(batch_id: str, target_agent: str | None = None) -> dict[str, str]:
