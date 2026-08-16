@@ -1793,6 +1793,7 @@ def queue_message(payload: MessageRequest) -> Any:
                 UnicodeError,
                 json.JSONDecodeError,
                 urllib.error.URLError,
+                RuntimeError,
             ):
                 fallback_reason = "api_request_failed"
 
