@@ -141,6 +141,14 @@ def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def safe_display_path(path: Path) -> str:
+    """对外展示路径时脱敏：返回相对 HERMES_HOME 的路径，避免暴露本机绝对路径。"""
+    try:
+        return str(path.relative_to(HERMES_HOME))
+    except ValueError:
+        return str(path)
+
+
 def iso_mtime(path: Path) -> str | None:
     try:
         return datetime.fromtimestamp(path.stat().st_mtime, timezone.utc).isoformat()
@@ -475,7 +483,7 @@ def cron_summary(limit: int | None = 25) -> dict[str, Any]:
     if not metadata["present"]:
         return {
             "available": False,
-            "source": str(CRON_JOBS),
+            "source": safe_display_path(CRON_JOBS),
             "modified_at": None,
             "total": 0,
             "enabled": 0,
@@ -491,7 +499,7 @@ def cron_summary(limit: int | None = 25) -> dict[str, Any]:
     except (OSError, UnicodeError, json.JSONDecodeError) as exc:
         return {
             "available": False,
-            "source": str(CRON_JOBS),
+            "source": safe_display_path(CRON_JOBS),
             "modified_at": metadata["modified_at"],
             "total": 0,
             "enabled": 0,
@@ -532,7 +540,7 @@ def cron_summary(limit: int | None = 25) -> dict[str, Any]:
 
     return {
         "available": True,
-        "source": str(CRON_JOBS),
+        "source": safe_display_path(CRON_JOBS),
         "modified_at": metadata["modified_at"],
         "total": len(jobs),
         "enabled": enabled_count,
@@ -983,7 +991,7 @@ def activity() -> dict[str, Any]:
     lines = read_recent_lines(GATEWAY_LOG)
     return {
         "generated_at": utc_now(),
-        "source": str(GATEWAY_LOG),
+        "source": safe_display_path(GATEWAY_LOG),
         "available": GATEWAY_LOG.is_file(),
         "modified_at": iso_mtime(GATEWAY_LOG),
         "count": len(lines),
@@ -1019,7 +1027,7 @@ def evolution() -> dict[str, Any]:
     return {
         "generated_at": utc_now(),
         "skills": {
-            "path": str(SKILLS_HOME),
+            "path": safe_display_path(SKILLS_HOME),
             "available": SKILLS_HOME.is_dir(),
             "count": len(skill_entries),
             "recent": [
@@ -1203,7 +1211,7 @@ def list_kanban_tasks(include_archived: bool = False, limit: int = 100) -> dict[
     limit = max(1, min(int(limit or 100), 300))
     empty = {
         "available": False,
-        "source": str(KANBAN_DB),
+        "source": safe_display_path(KANBAN_DB),
         "total": 0,
         "status_counts": {},
         "items": [],
@@ -1284,7 +1292,7 @@ def list_kanban_tasks(include_archived: bool = False, limit: int = 100) -> dict[
         status_counts = dict(Counter(str(item["status"]) for item in items))
         return {
             "available": True,
-            "source": str(KANBAN_DB),
+            "source": safe_display_path(KANBAN_DB),
             "total": len(items),
             "status_counts": status_counts,
             "items": items,
@@ -1564,7 +1572,7 @@ def outbox() -> dict[str, Any]:
     recent = [compact_outbox_record(record) for record in records[-50:]]
     return {
         "generated_at": utc_now(),
-        "source": str(OUTBOX_FILE),
+        "source": safe_display_path(OUTBOX_FILE),
         "count": len(records),
         "stale_count": stale_count,
         "stale_after_hours": OUTBOX_STALE_AFTER_HOURS,
