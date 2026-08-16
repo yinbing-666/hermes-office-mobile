@@ -535,12 +535,15 @@ class IdempotencyStore:
 
 
 def request_source(request: Request) -> str:
-    forwarded = request.headers.get("CF-Connecting-IP", "").strip()
-    if forwarded:
-        try:
-            return str(ipaddress.ip_address(forwarded))
-        except ValueError:
-            pass
+    # 仅在显式部署于 Cloudflare 之后时才信任 CF-Connecting-IP，
+    # 否则该请求头可被任意客户端伪造，用于轮换 source key 绕过 per-source 登录限流。
+    if os.environ.get("HERMES_TRUST_CF_IP", "").strip() in ("1", "true", "yes"):
+        forwarded = request.headers.get("CF-Connecting-IP", "").strip()
+        if forwarded:
+            try:
+                return str(ipaddress.ip_address(forwarded))
+            except ValueError:
+                pass
     if request.client and request.client.host:
         try:
             return str(ipaddress.ip_address(request.client.host))

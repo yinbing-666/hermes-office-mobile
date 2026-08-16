@@ -50,6 +50,8 @@ SENT_FILE = PROJECT_ROOT / "runtime" / "sent.jsonl"
 BFF_PORT = 8787
 MESSAGE_TIMEOUT_SECONDS = 45
 OUTBOX_STALE_AFTER_HOURS = 48
+# outbox 投递租约有效期：投递中途进程崩溃后，processing 标记会残留，超过此秒数视为孤儿可被回收重投
+OUTBOX_LEASE_TTL_SECONDS = 600
 DOJO_METRICS = HERMES_HOME / "skills/dojo/data/metrics.json"
 PIPELINE_EXECUTOR = ThreadPoolExecutor(max_workers=2, thread_name_prefix="expert-pipeline")
 PIPELINE_JOBS: dict[str, dict[str, Any]] = {}
@@ -559,35 +561,18 @@ def _build_capabilities(skill_entries: list[Path]) -> list[dict[str, Any]]:
         {
             "name": "工具调用",
             "keywords": ["api", "cli", "tool", "browser", "search", "shell", "mcp"],
-            "mock_matched": [
-                {"name": "browser-automation", "modified_at": None},
-                {"name": "shell-executor", "modified_at": None},
-            ],
         },
         {
             "name": "内容理解",
             "keywords": ["doc", "pdf", "content", "media", "read", "write", "summary", "transcript"],
-            "mock_matched": [
-                {"name": "pdf-reader", "modified_at": None},
-                {"name": "content-analyzer", "modified_at": None},
-                {"name": "video-understand", "modified_at": None},
-            ],
         },
         {
             "name": "专家协作",
             "keywords": ["agent", "team", "expert", "delegate", "invest", "collaborat"],
-            "mock_matched": [
-                {"name": "delegate-task", "modified_at": None},
-                {"name": "expert-panel", "modified_at": None},
-            ],
         },
         {
             "name": "自动化任务",
             "keywords": ["task", "workflow", "cron", "automation", "schedule"],
-            "mock_matched": [
-                {"name": "cron-scheduler", "modified_at": None},
-                {"name": "workflow-engine", "modified_at": None},
-            ],
         },
     )
     result = []
@@ -597,8 +582,7 @@ def _build_capabilities(skill_entries: list[Path]) -> list[dict[str, Any]]:
             for e in skill_entries
             if any(k in e.name.lower() for k in group["keywords"])
         ]
-        if not matched:
-            matched = group["mock_matched"]
+        # 无匹配时返回空列表（遵循 README「缺失集成为 unavailable」承诺，不填充合成技能名）
         result.append({"name": group["name"], "matched": matched})
     return result
 
@@ -621,17 +605,9 @@ def evolution_trend(skill_entries: list[Path], profile_documents: list[dict[str,
                 profile_changes[datetime.fromisoformat(modified_at).date()] += 1
             except ValueError:
                 continue
-    # 无真实数据时返回演示数据
+    # 无真实数据时返回空列表，由调用方标记 available:false（遵循 README「缺失集成为 unavailable」承诺）
     if not skill_changes and not profile_changes:
-        return [
-            {
-                "date": day.isoformat(),
-                "skill_changes": hash(day.isoformat()) % 4,
-                "profile_changes": hash(day.isoformat() + "p") % 2,
-                "total_changes": (hash(day.isoformat()) % 4) + (hash(day.isoformat() + "p") % 2),
-            }
-            for day in dates
-        ]
+        return []
     return [
         {
             "date": day.isoformat(),
@@ -723,32 +699,7 @@ def evolution_milestones(
                 "description": "Skill 目录最近修改记录",
             }
         )
-    return sorted(milestones, key=lambda item: item["date"], reverse=True)[:12] if milestones else [
-        {
-            "title": "定时任务系统上线",
-            "date": datetime.now(timezone.utc).replace(day=1).isoformat(),
-            "type": "commit",
-            "description": "Cron 自动化工作流稳定运行",
-        },
-        {
-            "title": "能力矩阵持续扩展",
-            "date": (datetime.now(timezone.utc) - timedelta(days=5)).isoformat(),
-            "type": "skill",
-            "description": "Skill 库持续积累，已覆盖主要工作场景",
-        },
-        {
-            "title": "多 Profile 协作架构建立",
-            "date": (datetime.now(timezone.utc) - timedelta(days=12)).isoformat(),
-            "type": "profile",
-            "description": "default · media-ops · investor 三 Profile 协同",
-        },
-        {
-            "title": "Office 移动管理平台上线",
-            "date": (datetime.now(timezone.utc) - timedelta(days=20)).isoformat(),
-            "type": "commit",
-            "description": "集中查看员工状态、任务动态与能力档案",
-        },
-    ]
+    return sorted(milestones, key=lambda item: item["date"], reverse=True)[:12]
 
 
 def evolution_skill_tree(skill_entries: list[Path]) -> list[dict[str, Any]]:
@@ -1636,13 +1587,26 @@ def outbox() -> dict[str, Any]:
 def retry_outbox(payload: OutboxRetryRequest) -> dict[str, Any]:
     # 锁内只做快照和状态决策（快，不碰网络），网络投递移出锁外，避免阻塞整个队列。
     # 并发防护：锁内为待处理记录打 lease_id 标记并立即写回，第二个并发请求看到 processing 会跳过。
+    # 孤儿租约回收：投递中途进程崩溃后 processing 标记会残留，超过 OUTBOX_LEASE_TTL_SECONDS
+    # 视为孤儿，清除标记后重新进入待投递队列，避免消息被永久跳过。
+    now_for_lease = datetime.now(timezone.utc)
     with _OUTBOX_LOCK:
         records = read_outbox_records()
         stale_records: list[dict[str, Any]] = []
         pending: list[dict[str, Any]] = []
         for record in records:
             if record.get("processing"):
-                continue  # 已有并发重试在投递，跳过
+                processing_at = record.get("processing_at")
+                if isinstance(processing_at, str):
+                    try:
+                        leased_at = datetime.fromisoformat(processing_at)
+                    except ValueError:
+                        leased_at = None
+                    if leased_at is not None and (now_for_lease - leased_at).total_seconds() < OUTBOX_LEASE_TTL_SECONDS:
+                        continue  # 仍在投递中，跳过
+                # 租约超时或时间戳缺失：视为孤儿，清除标记后重新进入待投递队列
+                record.pop("processing", None)
+                record.pop("processing_at", None)
             if not payload.allow_stale and outbox_is_stale(record):
                 stale_records.append(record)
                 continue
@@ -1653,6 +1617,7 @@ def retry_outbox(payload: OutboxRetryRequest) -> dict[str, Any]:
         lease_id = f"lease-{uuid.uuid4().hex[:10]}"
         for record in to_attempt:
             record["processing"] = lease_id
+            record["processing_at"] = now_for_lease.isoformat()
         # 写回：stale 原样保留 + 待投递打标 + 未触碰保留
         write_outbox_records(stale_records + to_attempt + untouched)
 
@@ -1706,6 +1671,7 @@ def retry_outbox(payload: OutboxRetryRequest) -> dict[str, Any]:
             if rec.get("processing") == lease_id:
                 if any(f.get("id") == rec.get("id") for f in failures):
                     rec.pop("processing", None)
+                    rec.pop("processing_at", None)
                     rec["fallback_reason"] = next(f["fallback_reason"] for f in failures if f.get("id") == rec.get("id"))
                     merged.append(rec)
                 # 投递成功的记录：从 outbox 移除（已进 sent）
@@ -2005,7 +1971,7 @@ async def summarize_expert_batch(batch_id: str | None = None):
         logger.exception("summarize 配置读取失败")
         return JSONResponse(status_code=500, content={"error": "配置读取失败"})
 
-    # ── 3. 找同 batch_id 的三条专家回复 ───────────────────────
+    # ── 3. 找同 batch_id 的专家回复（至少 1 条，最多收集 2 条不同 agent 即停止）──
     try:
         with open(SENT_FILE, encoding="utf-8") as f:
             lines = f.readlines()

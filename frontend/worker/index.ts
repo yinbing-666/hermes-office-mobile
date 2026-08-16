@@ -65,29 +65,18 @@ export default {
         return new Response(JSON.stringify(data), { headers: responseHeaders });
       } catch (err: any) {
         return Response.json(
-          { ok: true, topics: [], source: "error", message: err.message },
-          { status: 200, headers: { "Access-Control-Allow-Origin": "*" } }
+          { ok: false, topics: [], source: "error", message: err.message },
+          { status: 502, headers: { "Access-Control-Allow-Origin": "*" } }
         );
       }
     }
 
-    // Proxy other /api/* to local BFF
+    // 其余 /api/* 路径无对应处理（Worker 运行在 edge，无法直接访问用户本机 BFF，
+    // 需 cloudflared tunnel 才能代理，本 Worker 不承担该职责）
     if (url.pathname.startsWith("/api/")) {
-      const localUrl = `http://127.0.0.1:8787${url.pathname}${url.search}`;
-      try {
-        const resp = await fetch(localUrl, {
-          headers: { "X-Forwarded-For": request.headers.get("CF-Connecting-IP") || "" },
-        });
-        const body = await resp.text();
-        return new Response(body, {
-          status: resp.status,
-          headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
-        });
-      } catch {
-        return Response.json({ error: "BFF unreachable" }, { status: 502 });
-      }
+      return Response.json({ error: "Not found" }, { status: 404, headers: { "Access-Control-Allow-Origin": "*" } });
     }
 
-    return Response.json({ error: "Not found" }, { status: 404 });
+    return Response.json({ error: "Not found" }, { status: 404, headers: { "Access-Control-Allow-Origin": "*" } });
   },
 };

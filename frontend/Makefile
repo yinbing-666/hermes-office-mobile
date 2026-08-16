@@ -17,11 +17,11 @@ dev:
 	@npm run dev
 
 test:
-	@cd frontend && npm run build
+	@npm run build
 
 clean:
-	@rm -rf frontend/dist
+	@rm -rf dist
 
 commit: gate
-	@git add -A && git commit
+	@git add -p && git commit
 
