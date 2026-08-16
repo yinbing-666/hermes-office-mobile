@@ -31,7 +31,7 @@ def settings_env(**overrides: str) -> dict[str, str]:
         "CF_ACCESS_AUD": "audience-tag",
         "HERMES_AUTH_ADMIN_EMAILS": "owner@example.com",
         "HERMES_AUTH_OPERATOR_EMAILS": "operator@example.com",
-        "HERMES_ALLOWED_ORIGIN": "https://office.icewill.tech",
+        "HERMES_ALLOWED_ORIGIN": "https://office.example.com",
     }
     values.update(overrides)
     return values
@@ -75,7 +75,7 @@ def make_request(
         "root_path": "",
         "headers": raw_headers,
         "client": ("127.0.0.1", 12345),
-        "server": ("office.icewill.tech", 443),
+        "server": ("office.example.com", 443),
     })
 
 
@@ -119,7 +119,7 @@ class AuthorizationPolicyTests(unittest.TestCase):
 
 class RequestGuardTests(unittest.TestCase):
     def test_csrf_requires_exact_origin_and_marker(self) -> None:
-        allowed = "https://office.icewill.tech"
+        allowed = "https://office.example.com"
         self.assertTrue(valid_csrf_headers(allowed, "1", allowed))
         self.assertFalse(
             valid_csrf_headers("https://evil.example", "1", allowed)
@@ -297,7 +297,7 @@ class SecurityMiddlewareTests(unittest.IsolatedAsyncioTestCase):
         manager = self.manager("operator@example.com")
         headers = {
             "Cf-Access-Jwt-Assertion": "token",
-            "Origin": "https://office.icewill.tech",
+            "Origin": "https://office.example.com",
             "X-Hermes-CSRF": "1",
             "Idempotency-Key": "71e120d4-9f7c-43ad-a580-1d122c546e60",
         }

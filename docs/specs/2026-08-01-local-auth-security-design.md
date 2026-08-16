@@ -2,13 +2,13 @@
 
 ## 状态
 
-- 方案已由主人确认。
+- 方案已由管理员确认。
 - 当前阶段只实施代码、测试和文档，不生成真实密码，不修改 systemd，不重启服务，不发布前端。
 - 生产启用仍需分别确认前端发布、交互式密码设置、systemd 运行模式和服务重启。
 
 ## 场景
 
-`office.icewill.tech` 是个人 Hermes 办公室。Cloudflare Access 免费套餐开通流程无法在没有银行卡的条件下完成，因此认证边界改为 FastAPI 本地单管理员会话。Tailscale 仅承担 SSH 恢复通道，不作为 HTTP 绕过入口。
+`office.example.com` 是示例部署地址。Cloudflare Access 免费套餐开通流程要求绑定银行卡，因此认证边界改为 FastAPI 本地单管理员会话。Tailscale 仅承担 SSH 恢复通道，不作为 HTTP 绕过入口。
 
 ## 目标
 
@@ -45,7 +45,7 @@ Tailscale SSH
 | 配置或文件 | 说明 |
 |---|---|
 | `HERMES_AUTH_MODE` | `disabled` 或 `local`；默认 `disabled` |
-| `HERMES_ALLOWED_ORIGIN` | 默认 `https://office.icewill.tech` |
+| `HERMES_ALLOWED_ORIGIN` | 默认 `https://office.example.com` |
 | `HERMES_LOCAL_AUTH_CONFIG` | 可选，本地认证配置文件路径 |
 | `HERMES_SESSION_TTL_SECONDS` | 默认 604800 秒，允许 900 至 2592000 秒 |
 | `backend/runtime/local-auth.json` | 管理员邮箱和 scrypt 密码记录，权限 600 |
@@ -97,7 +97,7 @@ Tailscale SSH
 运行命令时密码通过 `getpass` 交互输入，不进入 shell history、进程参数或日志：
 
 ```bash
-cd /home/agentuser/projects/hermes-office-mobile/backend
+cd ~/backend
 .venv/bin/python manage_local_auth.py set-password --email '<管理员邮箱>'
 ```
 
@@ -108,7 +108,7 @@ cd /home/agentuser/projects/hermes-office-mobile/backend
 1. 更新设计、代码、测试和文档，不触碰线上进程。
 2. 运行后端单元测试、Python 编译、前端 TypeScript 检查和差异检查。
 3. 单独确认后发布兼容登录态的前端；后端仍为 disabled，现有访问不受影响。
-4. 由主人或经确认的交互终端设置真实密码，验证文件权限和脱敏状态命令。
+4. 由管理员或经确认的交互终端设置真实密码，验证文件权限和脱敏状态命令。
 5. 单独确认后设置 `HERMES_AUTH_MODE=local` 并重启 BFF。
 6. 验证匿名 session 状态、匿名业务 API 401、错误密码 401、正确密码登录、Cookie 属性和退出。
 7. 验证 Tailscale SSH 重设密码后旧会话立即失效。

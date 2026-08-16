@@ -4,7 +4,7 @@
 
 ## A-01 生产首页与静态资源
 
-- **入口**：`https://office.icewill.tech/`
+- **入口**：`https://office.example.com/`
 - **操作**：打开首页并硬刷新；检查 HTML 引用的 JS/CSS、manifest、favicon 和 Service Worker 请求。
 - **预期结果**：页面正常加载；资源均为 200；公网 HTML 资源哈希与服务器 `frontend/dist/index.html` 一致；控制台无未处理错误。
 - **失败时应保留的证据**：时间、URL、原始截图、控制台错误、失败请求、响应状态与服务器构建哈希。
@@ -18,7 +18,7 @@
 
 ## A-03 BFF 健康状态
 
-- **入口**：`GET http://127.0.0.1:8787/api/health` 与 `GET https://office.icewill.tech/api/health`
+- **入口**：`GET http://127.0.0.1:8787/api/health` 与 `GET https://office.example.com/api/health`
 - **操作**：分别执行本机和公网 GET，并只读检查 `systemctl --user is-active hermes-office-mobile-bff.service`。
 - **预期结果**：服务为 `active`；两处接口均返回 200；响应不包含 key、token 或凭证值。
 - **失败时应保留的证据**：时间、状态码、脱敏响应、服务状态和最近日志；不得复制敏感配置内容。
@@ -47,13 +47,13 @@
 ## A-07 消息、补投与 Kanban 写操作
 
 - **入口**：`POST /api/messages`、`POST /api/outbox/retry`、`POST /api/kanban/unblock/{task_id}`。
-- **操作**：默认跳过。只有主人明确指定目标、内容和影响后，才按单次授权执行一个最小请求。
+- **操作**：默认跳过。只有管理员明确指定目标、内容和影响后，才按单次授权执行一个最小请求。
 - **预期结果**：未获确认时不产生请求；获确认后仅影响指定目标，并以服务响应和页面／任务状态证据判断结果，不能用前端点击或本地入队代替成功。
 - **失败时应保留的证据**：授权范围、时间、脱敏请求摘要、原始服务响应、任务 ID、页面状态和失败日志。
 
 ## A-08 公网安全边界
 
-- **入口**：`https://office.icewill.tech/api/*`
+- **入口**：`https://office.example.com/api/*`
 - **操作**：审阅本地认证模式、服务端会话、角色授权、限流和 CORS 的当前事实；不进行攻击性测试或未授权业务写请求。
 - **预期结果**：源代码已实现但未启用时，文档和 ROADMAP 必须继续标记公网风险；任何人都不把 CORS 或“代码已写完”描述为线上鉴权已经生效。
 - **失败时应保留的证据**：相关配置位置、脱敏响应头、运行模式、风险说明和复现步骤，不记录 JWT、Cookie 或配置值。

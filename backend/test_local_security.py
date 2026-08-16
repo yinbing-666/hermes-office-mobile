@@ -27,7 +27,7 @@ from local_security import (
 
 
 PASSWORD = "correct horse battery staple"
-ORIGIN = "https://office.icewill.tech"
+ORIGIN = "https://office.example.com"
 
 
 def make_request(
@@ -55,7 +55,7 @@ def make_request(
         "root_path": "",
         "headers": raw_headers,
         "client": ("203.0.113.9", 12345),
-        "server": ("office.icewill.tech", 443),
+        "server": ("office.example.com", 443),
     })
 
 

@@ -90,7 +90,7 @@ class SecuritySettings:
             admin_emails=emails("HERMES_AUTH_ADMIN_EMAILS"),
             operator_emails=emails("HERMES_AUTH_OPERATOR_EMAILS"),
             allowed_origin=values.get(
-                "HERMES_ALLOWED_ORIGIN", "https://office.icewill.tech"
+                "HERMES_ALLOWED_ORIGIN", "https://office.example.com"
             ).strip().rstrip("/"),
             idempotency_path=runtime_dir / "idempotency.json",
             audit_path=runtime_dir / "security-audit.jsonl",

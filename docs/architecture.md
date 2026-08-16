@@ -4,10 +4,10 @@
 
 ```text
 用户浏览器
-  → https://office.icewill.tech
+  → https://office.example.com
   → Cloudflare Tunnel
   → Nginx
-      ├─ / 与静态资源 → /home/agentuser/projects/hermes-office-mobile/frontend/dist
+      ├─ / 与静态资源 → ~/frontend/dist
       └─ /api/* → http://127.0.0.1:8787
                     → hermes-office-mobile-bff.service（systemd user service）
                     → FastAPI backend/main.py
@@ -48,12 +48,12 @@ Hermes core、Gateway、profile 配置和 Kanban 数据源均属于应用外部�
 
 ## 信任边界
 
-- `https://office.icewill.tech/api/*` 是公网入口。
+- `https://office.example.com/api/*` 是公网入口。
 - CORS 只影响浏览器跨域请求，不提供身份认证、接口授权或限流。
 - 安全源代码已存在，但密码配置、运行模式、服务重启和公网验收完成前仍按未启用处理。
 - 本地认证模式必须同时验证服务端会话与 BFF 角色权限，不能只相信前端按钮状态或可伪造的转发头。
 - Tailscale SSH 属于独立恢复平面：可在网页登录失效时交互重置密码、撤销会话和恢复服务，但不能绕过 HTTP 鉴权。
-- 写操作、生产发布、配置变更和历史队列恢复必须先说明目标、影响、风险并取得主人确认。
+- 写操作、生产发布、配置变更和历史队列恢复必须先说明目标、影响、风险并取得管理员确认。
 
 ## 不变量
 

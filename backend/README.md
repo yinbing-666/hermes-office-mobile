@@ -12,16 +12,16 @@ Hermes Office Mobile 的 FastAPI BFF，监听 `127.0.0.1:8787`，由用户级 `h
 
 ## 公网边界
 
-生产站点通过 `https://office.icewill.tech/api/*` 暴露 BFF。`local_security.py` 已实现单管理员本地密码登录、服务端会话、严格 Origin、CSRF 头、幂等、按身份限流和脱敏审计；默认 `HERMES_AUTH_MODE=disabled`。
+生产站点通过 `https://office.example.com/api/*` 暴露 BFF。`local_security.py` 已实现单管理员本地密码登录、服务端会话、严格 Origin、CSRF 头、幂等、按身份限流和脱敏审计；默认 `HERMES_AUTH_MODE=disabled`。
 
 当前尚未交互设置管理员密码、配置 `HERMES_AUTH_MODE=local` 或重启生产服务，因此线上仍不能视为已启用鉴权。`Access-Control-Allow-Origin` 只控制浏览器跨域行为，不是身份认证。
 
-在本地登录完成生产验收前，默认验收只执行 GET 请求。任何业务 POST 验证都可能发送消息、重试历史队列或改变工作流／看板状态，必须先得到主人针对该次操作的确认。登录和退出只用于认证验收，不代表业务写操作授权。完整设计见 [`../docs/specs/2026-08-01-local-auth-security-design.md`](../docs/specs/2026-08-01-local-auth-security-design.md)。
+在本地登录完成生产验收前，默认验收只执行 GET 请求。任何业务 POST 验证都可能发送消息、重试历史队列或改变工作流／看板状态，必须先得到管理员针对该次操作的确认。登录和退出只用于认证验收，不代表业务写操作授权。完整设计见 [`../docs/specs/2026-08-01-local-auth-security-design.md`](../docs/specs/2026-08-01-local-auth-security-design.md)。
 
 ## Install
 
 ```bash
-cd /home/agentuser/projects/hermes-office-mobile/backend
+cd ~/backend
 python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
 ```
@@ -29,7 +29,7 @@ python3 -m venv .venv
 ## 本地运行
 
 ```bash
-cd /home/agentuser/projects/hermes-office-mobile/backend
+cd ~/backend
 .venv/bin/uvicorn main:app --host 127.0.0.1 --port 8787
 ```
 
@@ -40,7 +40,7 @@ cd /home/agentuser/projects/hermes-office-mobile/backend
 ## 不发布验证
 
 ```bash
-cd /home/agentuser/projects/hermes-office-mobile/backend
+cd ~/backend
 .venv/bin/python -m py_compile main.py local_security.py manage_local_auth.py test_local_security.py
 .venv/bin/python -m unittest -v test_access_security.py test_local_security.py
 ```

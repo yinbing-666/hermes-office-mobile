@@ -179,7 +179,7 @@ class SecuritySettings:
         settings = cls(
             mode=values.get("HERMES_AUTH_MODE", "disabled").strip().lower(),
             allowed_origin=values.get(
-                "HERMES_ALLOWED_ORIGIN", "https://office.icewill.tech"
+                "HERMES_ALLOWED_ORIGIN", "https://office.example.com"
             ).strip().rstrip("/"),
             auth_config_path=Path(
                 values.get("HERMES_LOCAL_AUTH_CONFIG", runtime_dir / "local-auth.json")

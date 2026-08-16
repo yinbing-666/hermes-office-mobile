@@ -9,13 +9,13 @@
     "preview": "vite preview --host 0.0.0.0"
   },
   "dependencies": {
-    "@vitejs/plugin-react": "latest",
+    "@vitejs/plugin-react": "^6.0.3",
     "dagrejs": "^0.2.1",
-    "react": "latest",
-    "react-dom": "latest",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
     "reactflow": "^11.11.4",
-    "typescript": "latest",
-    "vite": "latest"
+    "typescript": "^7.0.2",
+    "vite": "^8.1.4"
   },
   "devDependencies": {
     "@types/react": "^19.2.17",

@@ -4,6 +4,15 @@ dist/
 __pycache__/
 *.pyc
 .env*
+!.env.example
 backend/runtime/
 .DS_Store
-
+graphify-out/
+backend/_ai_daily_tmp.md
+react-input-cdp-test.js
+frontend/react-input-cdp-test.cjs
+*-BRIEF.md
+.hermes/plans/
+backend/data/wiki_*.json
+backend/systemd/
+docs/operations.md

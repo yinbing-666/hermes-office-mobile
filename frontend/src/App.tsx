@@ -268,7 +268,7 @@ function MobileAccessCard({ installPrompt, installed, onInstall }: { installProm
       <div className="mobile-access-icon"><OfficeIcon name="monitor" size={18} /></div>
       <div>
         <strong>手机访问</strong>
-        <p>同一 Tailnet 打开 <code>http://100.99.196.3:5176/</code></p>
+        <p>在同一网络中打开 <code>/</code></p>
         <small>{installHint}</small>
       </div>
       {installPrompt && !installed ? <button onClick={onInstall}>安装</button> : null}

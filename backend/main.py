@@ -8,8 +8,8 @@ import re
 
 logger = logging.getLogger(__name__)
 
-DRAGON_BASE_URL: str = os.environ.get("DRAGON_BASE_URL", "https://newapi.dragon3api.com/v1")
-DRAGON_MODEL: str = os.environ.get("DRAGON_MODEL", "gpt-5.6-sol")
+DRAGON_BASE_URL: str = os.environ.get("DRAGON_BASE_URL", "").strip()
+DRAGON_MODEL: str = os.environ.get("DRAGON_MODEL", "").strip()
 import socket
 import stat
 import subprocess
@@ -33,14 +33,16 @@ from pydantic import BaseModel, Field
 
 from local_security import SecurityManager, SecuritySettings
 
-HERMES_HOME = Path("/home/agentuser/.hermes")
+HERMES_HOME = Path(os.environ.get("HERMES_HOME", "~/.hermes")).expanduser()
 PROFILES_HOME = HERMES_HOME / "profiles"
 GATEWAY_LOG = HERMES_HOME / "logs" / "gateway.log"
 CRON_JOBS = HERMES_HOME / "cron" / "jobs.json"
 KANBAN_DB = HERMES_HOME / "kanban.db"
 SKILLS_HOME = HERMES_HOME / "skills"
-WIKI_HOME = Path("/home/agentuser/wiki")
-VAULT_HOME = Path("/home/agentuser/vault")
+WIKI_HOME = Path(os.environ.get("HERMES_WIKI_HOME", HERMES_HOME / "wiki")).expanduser()
+VAULT_HOME = Path(os.environ.get("HERMES_VAULT_HOME", HERMES_HOME / "vault")).expanduser()
+TOKEN_TRACKER_SITE_PACKAGES = os.environ.get("TOKEN_TRACKER_SITE_PACKAGES", "").strip()
+TOKEN_TRACKER_PYTHON = os.environ.get("TOKEN_TRACKER_PYTHON", sys.executable).strip()
 PROJECT_ROOT = Path(__file__).resolve().parent
 REPOSITORY_ROOT = PROJECT_ROOT.parent
 OUTBOX_FILE = PROJECT_ROOT / "runtime" / "outbox.jsonl"
@@ -921,7 +923,8 @@ def token_usage() -> dict[str, Any]:
 
     # 成本估算：复用 token-tracker 的 litellm 定价（与 Codex 区块同源）
     try:
-        sys.path.insert(0, "/home/agentuser/.local/share/uv/tools/token-tracker/lib/python3.14/site-packages")
+        if TOKEN_TRACKER_SITE_PACKAGES:
+            sys.path.insert(0, TOKEN_TRACKER_SITE_PACKAGES)
         from token_tracker.analyzer.cost import calculate_cost
         from token_tracker.adapters.types import UsageEntry
         from datetime import datetime as _dt, timezone as _tz
@@ -994,13 +997,13 @@ def codex_usage(days: int = 14) -> dict[str, Any]:
     Codex CLI / CC 直连的用量（独立计费，state.db 不覆盖）。
     """
     import json as _json
-    script = Path("/home/agentuser/.hermes/scripts/codex-usage-aggregate.py")
+    script = HERMES_HOME / "scripts" / "codex-usage-aggregate.py"
     if not script.is_file():
         return {"ok": True, "available": False, "message": "codex-usage-aggregate.py 不存在"}
     days = max(1, min(int(days), 90))
     try:
         result = subprocess.run(
-            ["/home/agentuser/.local/share/uv/tools/token-tracker/bin/python", str(script), str(days)],
+            [TOKEN_TRACKER_PYTHON, str(script), str(days)],
             capture_output=True, text=True, timeout=60,
         )
         if result.returncode != 0:
@@ -1980,7 +1983,7 @@ async def summarize_expert_batch(batch_id: str | None = None):
 
     # ── 1. 读取路由配置（只读一次） ────────────────────────────
     try:
-        with open("/home/agentuser/.hermes/config/model_route_table.yaml") as f:
+        with (HERMES_HOME / "config" / "model_route_table.yaml").open() as f:
             route_cfg = yaml.safe_load(f)
         cc_routes = route_cfg.get("routes", {}).get("claude_code", [])
         if not cc_routes:
@@ -1990,7 +1993,7 @@ async def summarize_expert_batch(batch_id: str | None = None):
         llm_model = top["model"]
         api_key = top.get("key") or top.get("api_key")
         if not api_key:
-            env_path = Path("/home/agentuser/.hermes/.env")
+            env_path = HERMES_HOME / ".env"
             for line in env_path.read_text(encoding="utf-8").splitlines():
                 if line.startswith("GY_API_KEY="):
                     api_key = line.split("=", 1)[1].strip()
@@ -2076,7 +2079,7 @@ async def kanban_unblock(task_id: str):
         r = subprocess.run(
             ["hermes", "kanban", "promote", task_id],
             capture_output=True, text=True, timeout=20,
-            env={**__import__("os").environ, "HERMES_HOME": "/home/agentuser/.hermes"},
+            env={**os.environ, "HERMES_HOME": str(HERMES_HOME)},
         )
         if r.returncode != 0:
             logger.warning("kanban promote 失败 task_id=%s stderr=%s", task_id, r.stderr[:200])
@@ -2290,7 +2293,11 @@ def _wait_for_response(batch_id: str, agent_id: str, timeout: int = 30) -> str |
 
 def _get_llm_config() -> tuple[str, str, str]:
     """读取 LLM 配置：base_url, model, api_key。
-    默认使用 Dragon relay，可通过 DRAGON_BASE_URL / DRAGON_MODEL 覆盖。"""
+    所有 Dragon 参数均通过环境变量提供。"""
+    if not DRAGON_BASE_URL:
+        raise ValueError("DRAGON_BASE_URL 未配置：请设置环境变量 DRAGON_BASE_URL")
+    if not DRAGON_MODEL:
+        raise ValueError("DRAGON_MODEL 未配置：请设置环境变量 DRAGON_MODEL")
     dragon_key = os.environ.get("DRAGON_API_KEY", "")
     if not dragon_key:
         raise ValueError("DRAGON_API_KEY 未配置：请设置环境变量 DRAGON_API_KEY")

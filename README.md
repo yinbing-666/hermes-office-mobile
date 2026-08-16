@@ -1,100 +1,125 @@
 # Hermes Office Mobile
 
-Hermes Office Mobile 是面向手机的 Hermes 多智能体办公室。前端以 React PWA 展示员工、任务、选题、空间和工作流；FastAPI BFF 聚合本机 Hermes 数据，并承接消息投递、兜底队列和部分看板／工作流操作。
+Hermes Office Mobile is a mobile-first office dashboard for local Hermes agent installations. A React progressive web app presents agents, tasks, knowledge, workspaces, usage, and workflows, while a FastAPI backend-for-frontend (BFF) reads local Hermes data and exposes a browser-oriented API.
 
-生产站点公开运行于 `https://office.icewill.tech`。本地密码登录、服务端会话、角色授权、CSRF、幂等和应用级限流代码已经实现并通过测试，但尚未设置真实密码、启用运行模式或重启服务，当前公网仍按“未启用鉴权”处理。CORS 不能视为安全边界，任何有副作用的接口验证都必须先得到主人确认。
-
-## 当前能力
-
-- 展示小黑、小橙、小金的状态、任务、进化档案和真实活动摘要。
-- 聚合 Cron、Gateway、Kanban、sent 与 outbox，区分已送达、待补投、阻塞、失败和暂停。
-- 将消息优先投递到本机 Hermes API Server，失败时写入项目 outbox。
-- 提供空间、专家团、选题和工作流页面；专家团只展示真实投递／回执，工作流执行当前明确为模拟模式。
-- PWA 支持移动端安装和离线 app shell；API 始终以网络真实结果为准。
-
-本项目不修改 Hermes core、profile 配置、`.env`、密钥或 Gateway。没有真实计量或执行证据时，界面必须显示待接入、未确认或模拟状态，不能生成看似真实的结果。
-
-## 目录
+## Architecture
 
 ```text
-backend/                 FastAPI BFF 与项目运行时数据
-frontend/                React + TypeScript + 原生 CSS PWA
-docs/architecture.md     架构、数据流和信任边界
-docs/api.md              API 分类与副作用
-docs/operations.md       生产构建、检查、回滚和 outbox 恢复
-docs/acceptance.md       移动端与服务验收用例
-docs/specs/              跨模块设计与分阶段上线门禁
-ROADMAP.md               当前进度、已知问题、下一步和判断库
+Browser / installed PWA
+        |
+        | same-origin HTTP (/api/*)
+        v
+React + TypeScript + Vite
+        |
+        v
+FastAPI BFF
+  |-- Hermes profiles, logs, jobs, and state database
+  |-- Local wiki and vault directories
+  |-- Hermes API processes
+  `-- Runtime outbox and delivery records
 ```
 
-## 开发启动
+The frontend uses relative API URLs. During development, Vite proxies `/api` to `http://127.0.0.1:8787`. In production, serve the built frontend and proxy `/api/*` to the BFF from the same origin.
 
-后端：
+## Features
+
+- Mobile-first dashboard with PWA installation and an offline application shell
+- Agent status, activity, profiles, tasks, and evolution views
+- Cron, gateway, Kanban, sent-message, and outbox aggregation
+- Message delivery through a local Hermes API with an outbox fallback
+- Knowledge topics, graph views, workspaces, expert panels, and workflows
+- Local usage and token-cost summaries when compatible data sources are available
+- Optional password-based local authentication, server-side sessions, CSRF checks, idempotency, rate limiting, and audit records
+
+Some workflow and integration views depend on local Hermes files or optional tools. Missing integrations are reported as unavailable rather than populated with synthetic results.
+
+## Technology Stack
+
+- Backend: Python, FastAPI, Uvicorn, PyYAML, PyJWT
+- Frontend: React, TypeScript, Vite, React Flow, native CSS
+- Storage and integrations: local JSON/JSONL files, SQLite, Hermes CLI and API processes
+
+## Quick Start
+
+Prerequisites: Python 3.11 or newer, Node.js 20 or newer, and npm.
+
+1. Create the backend environment and start the API:
+
+   ```bash
+   cd backend
+   python3 -m venv .venv
+   .venv/bin/pip install -r requirements.txt
+   HERMES_AUTH_MODE=disabled \
+     HERMES_ALLOWED_ORIGIN=https://localhost.example \
+     .venv/bin/uvicorn main:app --host 127.0.0.1 --port 8787
+   ```
+
+2. In another terminal, start the frontend:
+
+   ```bash
+   cd frontend
+   npm install
+   npm run dev
+   ```
+
+3. Open `http://127.0.0.1:5173`.
+
+For a protected deployment, configure local authentication before exposing the service. The password setup utility is available at `backend/manage_local_auth.py`.
+
+## Environment Variables
+
+Do not commit real credentials or machine-specific paths. The values below are placeholders.
+
+| Variable | Required | Example / default | Purpose |
+| --- | --- | --- | --- |
+| `HERMES_HOME` | No | `~/.hermes` | Hermes configuration, profiles, logs, jobs, scripts, and state |
+| `HERMES_WIKI_HOME` | No | `<HERMES_HOME>/wiki` | Wiki content directory |
+| `HERMES_VAULT_HOME` | No | `<HERMES_HOME>/vault` | Vault content directory |
+| `HERMES_AUTH_MODE` | No | `disabled` | Authentication mode: `disabled` or `local` |
+| `HERMES_ALLOWED_ORIGIN` | Yes for deployment | `https://office.example.com` | Exact HTTPS browser origin accepted by the BFF |
+| `HERMES_LOCAL_AUTH_CONFIG` | For `local` mode | `/secure/path/local-auth.json` | Password configuration file |
+| `HERMES_SESSION_TTL_SECONDS` | No | `604800` | Session lifetime in seconds |
+| `DRAGON_BASE_URL` | For LLM-backed features | `https://api.example.com/v1` | OpenAI-compatible API base URL |
+| `DRAGON_MODEL` | For LLM-backed features | `your-model-name` | Model identifier |
+| `DRAGON_API_KEY` | For LLM-backed features | `replace-with-secret` | API credential |
+| `TOKEN_TRACKER_SITE_PACKAGES` | No | `/optional/python/site-packages` | Optional token-tracker import path |
+| `TOKEN_TRACKER_PYTHON` | No | Current Python executable | Python executable used by the usage aggregation script |
+
+## Security
+
+`HERMES_AUTH_MODE` defaults to `disabled`. In that mode, the BFF does not authenticate users. This is suitable only for local development on a trusted machine and must not be exposed to an untrusted network.
+
+Before any deployment, set `HERMES_AUTH_MODE=local`, create a strong local password configuration, set an exact HTTPS `HERMES_ALLOWED_ORIGIN`, protect runtime files, and place the BFF behind a same-origin HTTPS reverse proxy. CORS is not an authentication boundary. Several POST endpoints can send messages, update task state, or trigger local workflows, so review the API and operational documentation before exposing them.
+
+Keep `.env` files, credentials, private wiki indexes, runtime data, and machine-generated analysis output outside version control.
+
+## Testing
+
+Run backend syntax checks and tests:
 
 ```bash
-cd /home/agentuser/projects/hermes-office-mobile/backend
-python3 -m venv .venv
-.venv/bin/pip install -r requirements.txt
-.venv/bin/uvicorn main:app --host 127.0.0.1 --port 8787
+backend/.venv/bin/python -m py_compile \
+  backend/main.py \
+  backend/local_security.py \
+  backend/manage_local_auth.py
+cd backend
+.venv/bin/python -m unittest -v test_access_security.py test_local_security.py
 ```
 
-前端：
+Run the frontend type check and production build:
 
 ```bash
-cd /home/agentuser/projects/hermes-office-mobile/frontend
+cd frontend
 npm install
-npm run dev -- --host 127.0.0.1 --port 5173
+npm run build
 ```
 
-生产 BFF 由用户级 `hermes-office-mobile-bff.service` 守护，不要用开发命令替换该服务。真实线上链路、构建和回滚见 [`docs/operations.md`](docs/operations.md)。
-
-## 默认验证
-
-不发布的代码检查：
+Optional read-only smoke test after starting the backend:
 
 ```bash
-cd /home/agentuser/projects/hermes-office-mobile
-backend/.venv/bin/python -m py_compile backend/main.py backend/local_security.py backend/manage_local_auth.py
-cd backend && .venv/bin/python -m unittest -v test_access_security.py test_local_security.py
-cd ../frontend && npx tsc --noEmit
+curl --fail http://127.0.0.1:8787/api/health
 ```
 
-服务器 `frontend/dist` 是 Nginx 线上目录，`make gate` 包含生产构建，只能在取得公开发布确认后执行。
+## License
 
-只读 API 烟测：
-
-```bash
-curl -sS http://127.0.0.1:8787/api/health
-curl -sS http://127.0.0.1:8787/api/agents
-curl -sS http://127.0.0.1:8787/api/tasks
-curl -sS http://127.0.0.1:8787/api/outbox
-curl -sS https://office.icewill.tech/api/health
-```
-
-默认烟测禁止调用 POST。`POST /api/messages`、outbox 补投、Kanban、工作流和专家管线均可能产生真实副作用，详见 [`docs/api.md`](docs/api.md) 与 [`docs/acceptance.md`](docs/acceptance.md)。
-
-## 生产事实
-
-```text
-Cloudflare Tunnel
-  → Nginx
-    → frontend/dist
-    → /api/* → 127.0.0.1:8787
-      → hermes-office-mobile-bff.service
-```
-
-- BFF 只监听回环地址，由 Nginx 同源转发 `/api/*`。
-- BFF 会读取本机 Hermes API Server key，仅用于本机 Bearer 鉴权，绝不返回或记录凭证值。
-- 自动补投默认关闭；超过 48 小时的旧消息默认跳过，`allow_stale=true` 只能在确认历史内容和风险后使用。
-- 当前最高优先级是按门禁顺序分别确认：以禁用模式重启 BFF、发布登录前端、交互设置密码、启用本地认证并再次重启。Tailscale SSH 是忘记密码或会话异常时的恢复通道，不是网页免登录通道。安全源代码存在不等于线上已经生效。
-
-## 文档入口
-
-- [架构与数据流](docs/architecture.md)
-- [API 与副作用](docs/api.md)
-- [生产运维](docs/operations.md)
-- [验收清单](docs/acceptance.md)
-- [本地登录安全设计](docs/specs/2026-08-01-local-auth-security-design.md)
-- [已停止的 Access 设计](docs/specs/2026-08-01-access-security-design.md)
-- [后端边界](backend/README.md)
-- [项目进度](ROADMAP.md)
+This project is available under the MIT License. See [LICENSE](LICENSE).

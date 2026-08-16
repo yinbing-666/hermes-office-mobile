@@ -2,7 +2,7 @@
 
 ## 状态
 
-- 2026-08-01 因 Zero Trust Free 开通流程要求银行卡，主人决定停止采用本方案。
+- 2026-08-01 因 Zero Trust Free 开通流程要求绑定银行卡，决定停止采用本方案。
 - 当前替代方案见 `2026-08-01-local-auth-security-design.md`。
 - 本文仅保留为历史决策记录，Cloudflare Access 代码不得作为当前上线依据。
 - 代码默认保持 `HERMES_AUTH_MODE=disabled`，不会仅因源文件更新而改变线上访问。
@@ -10,7 +10,7 @@
 
 ## 场景
 
-`office.icewill.tech` 是个人 Hermes 办公室，不是匿名公共产品。页面展示 Hermes 状态，写接口可以发送消息、补投 outbox、修改 Kanban 状态或启动专家流程，因此静态页面和 API 都应只向被允许的身份开放。
+`office.example.com` 是个人 Hermes 办公室，不是匿名公共产品。页面展示 Hermes 状态，写接口可以发送消息、补投 outbox、修改 Kanban 状态或启动专家流程，因此静态页面和 API 都应只向被允许的身份开放。
 
 ## 目标
 
@@ -50,7 +50,7 @@ Browser
 | `CF_ACCESS_AUD` | 当前 Access 应用的 Audience Tag |
 | `HERMES_AUTH_ADMIN_EMAILS` | 逗号分隔的 admin 邮箱 |
 | `HERMES_AUTH_OPERATOR_EMAILS` | 可选，逗号分隔的 operator 邮箱 |
-| `HERMES_ALLOWED_ORIGIN` | 默认 `https://office.icewill.tech` |
+| `HERMES_ALLOWED_ORIGIN` | 默认 `https://office.example.com` |
 
 `enforce` 模式缺少团队域名、AUD 或 admin 邮箱时必须启动失败，不能静默退回公开模式。
 
@@ -119,7 +119,7 @@ Browser
 
 1. 本地完成模块测试、后端编译和前端类型检查，不重启、不发布。
 2. 单独确认后，读取现有 Access 配置并确认允许邮箱、团队域名和 AUD。
-3. 单独确认后，为整个 `office.icewill.tech/*` 创建或调整 Access 应用。
+3. 单独确认后，为整个 `office.example.com/*` 创建或调整 Access 应用。
 4. 验证被允许邮箱可登录、其他身份被拒绝。
 5. 单独确认后写入运行配置，启用 `HERMES_AUTH_MODE=enforce` 并重启 BFF。
 6. 单独确认后构建前端；因为 `frontend/dist` 是 Nginx 线上目录，该构建等同发布。
