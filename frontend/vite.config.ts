@@ -11,7 +11,6 @@ export default defineConfig({
     },
   },
   preview: {
-    allowedHosts: true,
     port: 4173,
     proxy: {
       '/api': 'http://127.0.0.1:8787',
